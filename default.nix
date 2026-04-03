@@ -1,11 +1,5 @@
 let
-  pinnedNixpkgs = builtins.fetchTarball "https://github.com/NixOS/nixpkgs/archive/refs/heads/nixos-25.11.tar.gz";
-  pkgs = import pinnedNixpkgs {
-    config = {
-      allowUnfree = true;
-      android_sdk.accept_license = true;
-    };
-  };
+  pkgs = import ./nixpkgs.nix;
   src = pkgs.nix-gitignore.gitignoreSource [ ] ./.;
 in
 
