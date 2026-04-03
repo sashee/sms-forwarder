@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">SMS Forwarder</string>
+    <string name="status_ok">OK</string>
+    <string name="status_nok">NOK</string>
+</resources>

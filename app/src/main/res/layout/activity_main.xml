@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="SMS Forwarder"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Headline5" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Status"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />
+
+        <TextView
+            android:id="@+id/statusSms"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="SMS permission: NOK" />
+
+        <TextView
+            android:id="@+id/statusCallScreening"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Call screening enabled: NOK" />
+
+        <TextView
+            android:id="@+id/statusBattery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Battery optimization exemption: NOK" />
+
+        <Button
+            android:id="@+id/buttonRequestSms"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Request SMS permission" />
+
+        <Button
+            android:id="@+id/buttonCallSettings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Open call screening settings" />
+
+        <Button
+            android:id="@+id/buttonBattery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Request battery exemption" />
+
+        <Button
+            android:id="@+id/buttonSave"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Save configuration" />
+
+        <Button
+            android:id="@+id/buttonClearLogs"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Clear logs" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Heartbeat"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />
+
+        <EditText
+            android:id="@+id/heartbeatUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Heartbeat URL"
+            android:inputType="textUri" />
+
+        <EditText
+            android:id="@+id/heartbeatMethod"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Method"
+            android:text="POST" />
+
+        <EditText
+            android:id="@+id/heartbeatContentType"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Content-Type"
+            android:text="text/plain" />
+
+        <EditText
+            android:id="@+id/heartbeatBody"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Body"
+            android:minLines="2" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="SMS"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />
+
+        <EditText
+            android:id="@+id/smsUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="SMS URL"
+            android:inputType="textUri" />
+
+        <EditText
+            android:id="@+id/smsMethod"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Method"
+            android:text="POST" />
+
+        <EditText
+            android:id="@+id/smsContentType"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Content-Type"
+            android:text="text/plain" />
+
+        <EditText
+            android:id="@+id/smsBody"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Body"
+            android:minLines="3" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Call"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />
+
+        <EditText
+            android:id="@+id/callUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Call URL"
+            android:inputType="textUri" />
+
+        <EditText
+            android:id="@+id/callMethod"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Method"
+            android:text="POST" />
+
+        <EditText
+            android:id="@+id/callContentType"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Content-Type"
+            android:text="text/plain" />
+
+        <EditText
+            android:id="@+id/callBody"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Body"
+            android:minLines="3" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Logs"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />
+
+        <TextView
+            android:id="@+id/logText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#22000000"
+            android:fontFamily="monospace"
+            android:padding="12dp"
+            android:textIsSelectable="true" />
+
+    </LinearLayout>
+</ScrollView>
