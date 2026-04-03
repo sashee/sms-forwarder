@@ -109,6 +109,14 @@
             android:minLines="2" />
 
         <TextView
+            android:id="@+id/heartbeatBodyExample"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/heartbeat_body_example"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Caption" />
+
+        <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
@@ -144,6 +152,14 @@
             android:minLines="3" />
 
         <TextView
+            android:id="@+id/smsBodyExample"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/sms_body_example"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Caption" />
+
+        <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
@@ -177,6 +193,14 @@
             android:layout_height="wrap_content"
             android:hint="Body"
             android:minLines="3" />
+
+        <TextView
+            android:id="@+id/callBodyExample"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/call_body_example"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Caption" />
 
         <TextView
             android:layout_width="wrap_content"

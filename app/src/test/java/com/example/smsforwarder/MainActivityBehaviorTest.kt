@@ -63,6 +63,18 @@ class MainActivityBehaviorTest {
         assertEquals("SMS permission: OK", activity.findViewById<TextView>(R.id.statusSms).text.toString())
         assertEquals("Call screening enabled: OK", activity.findViewById<TextView>(R.id.statusCallScreening).text.toString())
         assertEquals("Battery optimization exemption: NOK", activity.findViewById<TextView>(R.id.statusBattery).text.toString())
+        assertEquals(
+            activity.getString(R.string.heartbeat_body_example),
+            activity.findViewById<TextView>(R.id.heartbeatBodyExample).text.toString(),
+        )
+        assertEquals(
+            activity.getString(R.string.sms_body_example),
+            activity.findViewById<TextView>(R.id.smsBodyExample).text.toString(),
+        )
+        assertEquals(
+            activity.getString(R.string.call_body_example),
+            activity.findViewById<TextView>(R.id.callBodyExample).text.toString(),
+        )
     }
 
     @Test
