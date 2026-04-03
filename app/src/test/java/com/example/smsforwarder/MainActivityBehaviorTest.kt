@@ -13,6 +13,7 @@ import com.example.smsforwarder.testing.TestSmsForwarderApp
 import com.example.smsforwarder.testing.installTestContainer
 import com.example.smsforwarder.testing.testAppContainer
 import com.example.smsforwarder.testing.waitFor
+import com.example.smsforwarder.util.TimeFormatter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -69,6 +70,12 @@ class MainActivityBehaviorTest {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().resume().get()
         testAppContainer().eventRepository.addLog("hello", 1L)
         Robolectric.flushForegroundThreadScheduler()
+
+        waitFor {
+            shadowOf(Looper.getMainLooper()).idle()
+            activity.findViewById<TextView>(R.id.logText).text.toString() == "${TimeFormatter.toIsoUtc(1L)}: hello"
+        }
+        assertEquals("${TimeFormatter.toIsoUtc(1L)}: hello", activity.findViewById<TextView>(R.id.logText).text.toString())
 
         activity.findViewById<android.widget.Button>(R.id.buttonClearLogs).performClick()
         shadowOf(Looper.getMainLooper()).idle()

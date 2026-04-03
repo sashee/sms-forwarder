@@ -6,6 +6,7 @@ let
       android_sdk.accept_license = true;
     };
   };
+  src = pkgs.nix-gitignore.gitignoreSource [ ] ./.;
 in
 
 let
@@ -43,8 +44,8 @@ let
   '';
   offlineRepository = mkM2Repository {
     pname = "sms-forwarder";
-    version = "0.1.0";
-    src = ./.;
+    version = "0.1.1";
+    inherit src;
     repositories = [
       "https://dl.google.com/dl/android/maven2"
       "https://repo1.maven.org/maven2"
@@ -54,8 +55,8 @@ let
 in
 pkgs.stdenv.mkDerivation {
   pname = "sms-forwarder";
-  version = "0.1.0";
-  src = ./.;
+  version = "0.1.1";
+  inherit src;
   preferLocalBuild = true;
   allowSubstitutes = false;
 
@@ -70,15 +71,19 @@ pkgs.stdenv.mkDerivation {
     export ANDROID_SDK_ROOT=${androidSdk}/libexec/android-sdk
     export ANDROID_HOME=$ANDROID_SDK_ROOT
     export CACERT_PEM=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+    export SIGNING_STORE_FILE=$PWD/signing/app.jks
+    export SIGNING_STORE_PASSWORD=changeme
+    export SIGNING_KEY_ALIAS=app
+    export SIGNING_KEY_PASSWORD=changeme
     export MAVEN_SOURCE_REPOSITORY=${offlineRepository.m2Repository}
     export ROBOLECTRIC_DEPS_PROPERTIES=${robolectricDepsProperties}
     mkdir -p .gradle-home
     export GRADLE_USER_HOME=$PWD/.gradle-home
-    gradle --offline --no-daemon --init-script ${./nix/offline-init.gradle.kts} -Dorg.gradle.project.android.aapt2FromMavenOverride=${buildTools}/aapt2 testDebugUnitTest assembleDebug
+    gradle --offline --no-daemon --init-script ${./nix/offline-init.gradle.kts} -Dorg.gradle.project.android.aapt2FromMavenOverride=${buildTools}/aapt2 testDebugUnitTest assembleRelease
   '';
 
   installPhase = ''
     mkdir -p $out
-    cp app/build/outputs/apk/debug/app-debug.apk $out/
+    cp app/build/outputs/apk/release/app-release.apk $out/
   '';
 }

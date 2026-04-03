@@ -16,6 +16,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.smsforwarder.model.AppConfig
 import com.example.smsforwarder.model.EventConfig
+import com.example.smsforwarder.util.TimeFormatter
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -56,7 +57,7 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             appContainer.eventRepository.observeLogs().collect { logs ->
                 findViewById<TextView>(R.id.logText).text = logs.joinToString("\n") {
-                    "${it.timestamp}: ${it.text}"
+                    "${TimeFormatter.toIsoUtc(it.timestamp)}: ${it.text}"
                 }
             }
         }

@@ -42,6 +42,10 @@ pkgs.mkShell {
     export ANDROID_SDK_ROOT=${androidSdk}/libexec/android-sdk
     export ANDROID_HOME=$ANDROID_SDK_ROOT
     export CACERT_PEM=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+    export SIGNING_STORE_FILE=$PWD/signing/app.jks
+    export SIGNING_STORE_PASSWORD=changeme
+    export SIGNING_KEY_ALIAS=app
+    export SIGNING_KEY_PASSWORD=changeme
     export ROBOLECTRIC_DEPS_PROPERTIES=${robolectricDepsProperties}
   '';
 }

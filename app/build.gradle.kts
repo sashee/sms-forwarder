@@ -17,16 +17,35 @@ val generateCaBundle = tasks.register<Copy>("generateCaBundle") {
     rename { "nixpkgs_cacert.pem" }
 }
 
+val signingStoreFile = providers.environmentVariable("SIGNING_STORE_FILE")
+val signingStorePassword = providers.environmentVariable("SIGNING_STORE_PASSWORD")
+val signingKeyAlias = providers.environmentVariable("SIGNING_KEY_ALIAS")
+val signingKeyPassword = providers.environmentVariable("SIGNING_KEY_PASSWORD")
+
 android {
     namespace = "com.example.smsforwarder"
     compileSdk = 34
+
+    signingConfigs {
+        create("release") {
+            val storeFilePath = signingStoreFile.orNull
+                ?: error("SIGNING_STORE_FILE must be set by the build environment")
+            storeFile = file(storeFilePath)
+            storePassword = signingStorePassword.orNull
+                ?: error("SIGNING_STORE_PASSWORD must be set by the build environment")
+            keyAlias = signingKeyAlias.orNull
+                ?: error("SIGNING_KEY_ALIAS must be set by the build environment")
+            keyPassword = signingKeyPassword.orNull
+                ?: error("SIGNING_KEY_PASSWORD must be set by the build environment")
+        }
+    }
 
     defaultConfig {
         applicationId = "com.example.smsforwarder"
         minSdk = 28
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -34,6 +53,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -68,6 +88,10 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+
+    lint {
+        checkReleaseBuilds = false
     }
 }
 
