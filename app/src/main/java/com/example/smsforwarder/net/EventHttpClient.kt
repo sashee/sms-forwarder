@@ -3,11 +3,14 @@ package com.example.smsforwarder.net
 import android.content.Context
 import com.example.smsforwarder.R
 import java.io.BufferedInputStream
+import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.charset.StandardCharsets
 import java.security.KeyStore
 import java.security.SecureRandom
+import java.security.cert.Certificate
 import java.security.cert.CertificateFactory
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
@@ -55,9 +58,7 @@ open class EventHttpClient(
 
     private fun buildSslContext(): SSLContext {
         val certificateFactory = CertificateFactory.getInstance("X.509")
-        val certificates = openTrustAnchorStream().use { input ->
-            certificateFactory.generateCertificates(BufferedInputStream(input))
-        }
+        val certificates = openTrustAnchorStream().use { input -> loadCertificates(input, certificateFactory) }
         val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
             load(null, null)
         }
@@ -76,5 +77,27 @@ open class EventHttpClient(
 
     private fun openTrustAnchorStream(): InputStream {
         return trustAnchorOpener?.invoke() ?: context.resources.openRawResource(trustAnchorResourceId)
+    }
+
+    private fun loadCertificates(input: InputStream, certificateFactory: CertificateFactory): Collection<Certificate> {
+        val bundleBytes = input.readBytes()
+        val bundleText = bundleBytes.toString(StandardCharsets.US_ASCII)
+        val pemBlocks = PEM_CERTIFICATE_REGEX.findAll(bundleText).map { it.value }.toList()
+        if (pemBlocks.isNotEmpty()) {
+            return pemBlocks.map { pemBlock ->
+                ByteArrayInputStream(pemBlock.toByteArray(StandardCharsets.US_ASCII)).use { pemInput ->
+                    certificateFactory.generateCertificate(pemInput)
+                }
+            }
+        }
+
+        return certificateFactory.generateCertificates(BufferedInputStream(ByteArrayInputStream(bundleBytes)))
+    }
+
+    companion object {
+        private val PEM_CERTIFICATE_REGEX = Regex(
+            "-----BEGIN CERTIFICATE-----\\s.*?-----END CERTIFICATE-----",
+            setOf(RegexOption.DOT_MATCHES_ALL),
+        )
     }
 }

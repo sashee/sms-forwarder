@@ -19,4 +19,12 @@ class EventDeliveryWorkerUnitTest {
     fun retryDelayCapsAtOneDay() {
         assertEquals(24L * 60L * 60L * 1000L, EventDeliveryWorker.retryDelayMillisForAttempt(20))
     }
+
+    @Test
+    fun retryDelayStaysAtOneDayAfterCap() {
+        val oneDay = 24L * 60L * 60L * 1000L
+        assertEquals(oneDay, EventDeliveryWorker.retryDelayMillisForAttempt(8))
+        assertEquals(oneDay, EventDeliveryWorker.retryDelayMillisForAttempt(9))
+        assertEquals(oneDay, EventDeliveryWorker.retryDelayMillisForAttempt(99))
+    }
 }

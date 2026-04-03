@@ -6,7 +6,6 @@ import androidx.work.WorkerParameters
 import com.example.smsforwarder.AppContainer
 import com.example.smsforwarder.SmsForwarderApp
 import com.example.smsforwarder.net.HttpRequest
-import kotlin.math.pow
 
 class EventDeliveryWorker(
     appContext: Context,
@@ -62,8 +61,14 @@ class EventDeliveryWorker(
         private const val MAX_DELAY_MILLIS = 24L * 60L * 60L * 1000L
 
         internal fun retryDelayMillisForAttempt(attemptCount: Int): Long {
-            val exponentialMinutes = 2.0.pow((attemptCount - 1).coerceAtLeast(0)).toLong() * 15L
-            return (exponentialMinutes * 60_000L).coerceAtMost(MAX_DELAY_MILLIS)
+            var delayMillis = 15L * 60_000L
+            repeat((attemptCount - 1).coerceAtLeast(0)) {
+                if (delayMillis >= MAX_DELAY_MILLIS / 2L) {
+                    return MAX_DELAY_MILLIS
+                }
+                delayMillis *= 2L
+            }
+            return delayMillis
         }
     }
 }

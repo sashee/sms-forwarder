@@ -21,12 +21,12 @@ class SmsReceiver : BroadcastReceiver() {
             try {
                 handleMessages(appContainer, messagesFromIntent(intent))
             } finally {
-                pendingResult.finish()
+                pendingResult?.finish()
             }
         }
     }
 
-    internal fun messagesFromIntent(intent: Intent): List<IncomingSms> = Telephony.Sms.Intents.getMessagesFromIntent(intent).map {
+    internal fun messagesFromIntent(intent: Intent): List<IncomingSms> = Telephony.Sms.Intents.getMessagesFromIntent(intent).filterNotNull().map {
         IncomingSms(
             number = it.displayOriginatingAddress.orEmpty(),
             text = it.messageBody.orEmpty(),

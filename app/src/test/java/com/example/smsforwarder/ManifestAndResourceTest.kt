@@ -1,9 +1,15 @@
 package com.example.smsforwarder
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import androidx.test.core.app.ApplicationProvider
+import com.example.smsforwarder.receiver.BootReceiver
+import com.example.smsforwarder.receiver.SmsReceiver
+import com.example.smsforwarder.telecom.ForwardingCallScreeningService
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -21,6 +27,7 @@ class ManifestAndResourceTest {
     fun manifestDeclaresRequiredPermissionsAndComponents() {
         val packageInfo = packageManager.getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS or PackageManager.GET_RECEIVERS or PackageManager.GET_SERVICES)
         val permissions = packageInfo.requestedPermissions.toSet()
+        val service = packageInfo.services.single { it.name.endsWith("ForwardingCallScreeningService") }
 
         assertTrue(permissions.contains(Manifest.permission.RECEIVE_SMS))
         assertTrue(permissions.contains(Manifest.permission.RECEIVE_BOOT_COMPLETED))
@@ -28,6 +35,38 @@ class ManifestAndResourceTest {
         assertTrue(packageInfo.receivers.any { it.name.endsWith("SmsReceiver") })
         assertTrue(packageInfo.receivers.any { it.name.endsWith("BootReceiver") })
         assertTrue(packageInfo.services.any { it.name.endsWith("ForwardingCallScreeningService") })
+        assertEquals(Manifest.permission.BIND_SCREENING_SERVICE, service.permission)
+    }
+
+    @Test
+    fun manifestRegistersExpectedIntentFiltersAndNetworkFlags() {
+        val smsReceivers = packageManager.queryBroadcastReceivers(
+            Intent("android.provider.Telephony.SMS_RECEIVED").setPackage(context.packageName),
+            0,
+        )
+        val bootReceivers = packageManager.queryBroadcastReceivers(
+            Intent(Intent.ACTION_BOOT_COMPLETED).setPackage(context.packageName),
+            0,
+        )
+        val lockedBootReceivers = packageManager.queryBroadcastReceivers(
+            Intent(Intent.ACTION_LOCKED_BOOT_COMPLETED).setPackage(context.packageName),
+            0,
+        )
+        val serviceInfo = packageManager.getServiceInfo(
+            ComponentName(context, ForwardingCallScreeningService::class.java),
+            PackageManager.GET_META_DATA,
+        )
+        val applicationInfo = context.applicationInfo
+
+        assertTrue(smsReceivers.any { it.activityInfo.name == SmsReceiver::class.java.name })
+        assertTrue(bootReceivers.any { it.activityInfo.name == BootReceiver::class.java.name })
+        assertTrue(lockedBootReceivers.any { it.activityInfo.name == BootReceiver::class.java.name })
+        assertEquals(Manifest.permission.BIND_SCREENING_SERVICE, serviceInfo.permission)
+        assertTrue(applicationInfo.flags and ApplicationInfo.FLAG_USES_CLEARTEXT_TRAFFIC != 0)
+        val networkSecurityConfigRes = ApplicationInfo::class.java.getDeclaredField("networkSecurityConfigRes").apply {
+            isAccessible = true
+        }.getInt(applicationInfo)
+        assertEquals(R.xml.network_security_config, networkSecurityConfigRes)
     }
 
     @Test

@@ -12,12 +12,17 @@ class ForwardingCallScreeningService : CallScreeningService() {
         val number = callDetails.handle?.schemeSpecificPart.orEmpty()
         val timestamp = System.currentTimeMillis()
         val appContainer = (applicationContext as SmsForwarderApp).appContainer
+        val response = rejectionResponse()
 
         CoroutineScope(Dispatchers.IO).launch {
             handleCall(appContainer, number, timestamp)
+            try {
+                respond(callDetails, response)
+                appContainer.eventRepository.addLog("Rejected call")
+            } catch (error: Exception) {
+                appContainer.eventRepository.addLog("Call reject failed: ${error.message ?: error::class.java.simpleName}")
+            }
         }
-
-        respond(callDetails, rejectionResponse())
     }
 
     internal suspend fun handleCall(appContainer: com.example.smsforwarder.AppContainer, number: String, timestamp: Long) {

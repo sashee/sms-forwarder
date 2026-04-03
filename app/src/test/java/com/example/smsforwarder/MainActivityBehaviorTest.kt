@@ -1,8 +1,11 @@
 package com.example.smsforwarder
 
 import android.Manifest
+import android.app.Application
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.Settings
+import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
@@ -26,7 +29,6 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.shadows.ShadowApplication
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = TestSmsForwarderApp::class, sdk = [28])
@@ -54,7 +56,7 @@ class MainActivityBehaviorTest {
             ),
         )
         container.configRepository.setCallScreeningSeenAt(System.currentTimeMillis())
-        ShadowApplication.getInstance().grantPermissions(Manifest.permission.RECEIVE_SMS)
+        shadowOf(ApplicationProvider.getApplicationContext<Application>()).grantPermissions(Manifest.permission.RECEIVE_SMS)
 
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().resume().get()
 
@@ -75,6 +77,80 @@ class MainActivityBehaviorTest {
             activity.getString(R.string.call_body_example),
             activity.findViewById<TextView>(R.id.callBodyExample).text.toString(),
         )
+    }
+
+    @Test
+    fun showsBatteryOkWhenIgnoringOptimizations() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val powerManager = app.getSystemService(PowerManager::class.java)
+        shadowOf(powerManager).setIgnoringBatteryOptimizations(app.packageName, true)
+
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().resume().get()
+
+        assertEquals("Battery optimization exemption: OK", activity.findViewById<TextView>(R.id.statusBattery).text.toString())
+    }
+
+    @Test
+    fun showsNokStatusesWhenRequirementsAreMissing() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().resume().get()
+
+        assertEquals("SMS permission: NOK", activity.findViewById<TextView>(R.id.statusSms).text.toString())
+        assertEquals("Call screening enabled: NOK", activity.findViewById<TextView>(R.id.statusCallScreening).text.toString())
+        assertEquals("Battery optimization exemption: NOK", activity.findViewById<TextView>(R.id.statusBattery).text.toString())
+    }
+
+    @Test
+    fun savePersistsConfigAndLogs() = runBlocking {
+        val container = testAppContainer()
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().resume().get()
+
+        activity.findViewById<EditText>(R.id.heartbeatUrl).setText(" http://heartbeat ")
+        activity.findViewById<EditText>(R.id.heartbeatMethod).setText("")
+        activity.findViewById<EditText>(R.id.heartbeatContentType).setText("")
+        activity.findViewById<EditText>(R.id.heartbeatBody).setText("hb")
+        activity.findViewById<EditText>(R.id.smsUrl).setText("http://sms")
+        activity.findViewById<EditText>(R.id.smsMethod).setText("PUT")
+        activity.findViewById<EditText>(R.id.smsContentType).setText("application/json")
+        activity.findViewById<EditText>(R.id.smsBody).setText("sms")
+        activity.findViewById<EditText>(R.id.callUrl).setText("http://call")
+        activity.findViewById<EditText>(R.id.callMethod).setText("PATCH")
+        activity.findViewById<EditText>(R.id.callContentType).setText("text/xml")
+        activity.findViewById<EditText>(R.id.callBody).setText("call")
+
+        activity.findViewById<Button>(R.id.buttonSave).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+
+        waitFor {
+            shadowOf(Looper.getMainLooper()).idle()
+            runBlocking {
+                container.configRepository.getConfig() == AppConfig(
+                    heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb"),
+                    sms = EventConfig("http://sms", "PUT", "application/json", "sms"),
+                    call = EventConfig("http://call", "PATCH", "text/xml", "call"),
+                )
+            }
+        }
+
+        assertEquals(
+            AppConfig(
+                heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb"),
+                sms = EventConfig("http://sms", "PUT", "application/json", "sms"),
+                call = EventConfig("http://call", "PATCH", "text/xml", "call"),
+            ),
+            container.configRepository.getConfig(),
+        )
+
+        waitFor {
+            shadowOf(Looper.getMainLooper()).idle()
+            container.scheduler.heartbeatScheduledCount == 1
+        }
+        waitFor {
+            shadowOf(Looper.getMainLooper()).idle()
+            runBlocking { container.eventRepository.observeLogs().first().firstOrNull()?.text == "Configuration saved" }
+        }
+
+        assertEquals(1, container.scheduler.heartbeatScheduledCount)
+        assertEquals("Configuration saved", container.eventRepository.observeLogs().first().first().text)
     }
 
     @Test
@@ -100,5 +176,22 @@ class MainActivityBehaviorTest {
 
         activity.findViewById<android.widget.Button>(R.id.buttonCallSettings).performClick()
         assertEquals(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS, shadowOf(activity).nextStartedActivity.action)
+    }
+
+    @Test
+    fun smsPermissionButtonRequestsReceiveSmsPermission() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().resume().get()
+
+        activity.findViewById<Button>(R.id.buttonRequestSms).performClick()
+
+        val permissionsRequest = shadowOf(activity)
+            .javaClass
+            .getMethod("getLastRequestedPermission")
+            .invoke(shadowOf(activity))
+        val permissionsField = permissionsRequest.javaClass.getDeclaredField("requestedPermissions").apply {
+            isAccessible = true
+        }
+        val requestedPermissions = permissionsField.get(permissionsRequest) as Array<*>
+        assertEquals(listOf(Manifest.permission.RECEIVE_SMS), requestedPermissions.toList())
     }
 }

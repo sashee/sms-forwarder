@@ -30,4 +30,30 @@ class PlaceholderRendererTest {
 
         assertEquals(" {{unknown}}", rendered)
     }
+
+    @Test
+    fun rendersCallPlaceholdersAndPrivateNumberAsEmpty() {
+        val rendered = PlaceholderRenderer.render(
+            type = EventType.CALL,
+            template = "from={{call.number}} at={{call.timestamp}}",
+            number = "",
+            text = "ignored",
+            timestampMillis = 1_234L,
+        )
+
+        assertEquals("from= at=1970-01-01T00:00:01.234Z", rendered)
+    }
+
+    @Test
+    fun leavesHeartbeatBodyUnchanged() {
+        val rendered = PlaceholderRenderer.render(
+            type = EventType.HEARTBEAT,
+            template = "alive {{sms.text}} {{call.number}}",
+            number = "+1555",
+            text = "hello",
+            timestampMillis = 0,
+        )
+
+        assertEquals("alive {{sms.text}} {{call.number}}", rendered)
+    }
 }

@@ -46,6 +46,9 @@ class DaoTest {
 
         queueDao.deleteById(secondId)
         assertNull(queueDao.getById(secondId))
+
+        queueDao.deleteAll()
+        assertEquals(emptyList<QueuedEventEntity>(), queueDao.getAll())
     }
 
     @Test
@@ -53,8 +56,10 @@ class DaoTest {
         val logDao = database.logDao()
         logDao.insert(LogEntryEntity(timestamp = 1L, text = "one"))
         logDao.insert(LogEntryEntity(timestamp = 2L, text = "two"))
+        logDao.insert(LogEntryEntity(timestamp = 3L, text = "three"))
 
-        assertEquals(listOf("two", "one"), logDao.observeLatest(10).first().map { it.text })
+        assertEquals(listOf("three", "two", "one"), logDao.observeLatest(10).first().map { it.text })
+        assertEquals(listOf("three", "two"), logDao.observeLatest(2).first().map { it.text })
 
         logDao.deleteAll()
         assertEquals(emptyList<LogEntryEntity>(), logDao.observeLatest(10).first())

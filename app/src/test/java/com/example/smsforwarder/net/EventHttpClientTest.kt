@@ -64,6 +64,28 @@ class EventHttpClientTest {
     }
 
     @Test
+    fun returnsHttpFailureResponseCode() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(503))
+            server.start()
+
+            val client = EventHttpClient(ApplicationProvider.getApplicationContext())
+
+            assertEquals(
+                503,
+                client.send(
+                    HttpRequest(
+                        url = server.url("/failure").toString(),
+                        method = "POST",
+                        contentType = "text/plain",
+                        body = "hello",
+                    ),
+                ),
+            )
+        }
+    }
+
+    @Test
     fun supportsHttpsWithInjectedTrustAnchor() {
         val root = HeldCertificate.Builder().certificateAuthority(0).commonName("Test Root").build()
         val serverCert = HeldCertificate.Builder()
@@ -94,6 +116,48 @@ class EventHttpClientTest {
                         method = "POST",
                         contentType = "text/plain",
                         body = "secure",
+                    ),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun supportsHttpsWhenTrustBundleContainsMultiplePemCertificates() {
+        val unusedRoot = HeldCertificate.Builder().certificateAuthority(0).commonName("Unused Root").build()
+        val trustedRoot = HeldCertificate.Builder().certificateAuthority(0).commonName("Trusted Root").build()
+        val serverCert = HeldCertificate.Builder()
+            .signedBy(trustedRoot)
+            .commonName("localhost")
+            .addSubjectAlternativeName("localhost")
+            .build()
+
+        val serverCertificates = HandshakeCertificates.Builder()
+            .heldCertificate(serverCert)
+            .build()
+
+        MockWebServer().use { server ->
+            server.useHttps(serverCertificates.sslSocketFactory(), false)
+            server.enqueue(MockResponse().setResponseCode(200))
+            server.start()
+
+            val client = EventHttpClient(
+                context = ApplicationProvider.getApplicationContext(),
+                trustAnchorOpener = {
+                    ByteArrayInputStream(
+                        (unusedRoot.certificatePem() + trustedRoot.certificatePem()).toByteArray(),
+                    )
+                },
+            )
+
+            assertEquals(
+                200,
+                client.send(
+                    HttpRequest(
+                        url = server.url("/secure").toString().replace("http://", "https://"),
+                        method = "GET",
+                        contentType = "text/plain",
+                        body = "",
                     ),
                 ),
             )

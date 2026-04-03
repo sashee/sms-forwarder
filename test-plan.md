@@ -168,6 +168,7 @@ Tests:
   - increments attempt count
   - schedules retry
   - writes retry log
+  - does not set catastrophic fault state
 - retry delay matches expected exponential schedule
 
 ### HeartbeatWorker
@@ -181,6 +182,7 @@ Tests:
 - logs success on HTTP response
 - logs failure on exception
 - does not schedule retry on failure
+- does not set catastrophic fault state on delivery failure
 - when fault state is active and younger than 24 hours:
   - skips heartbeat send
   - writes skip log
@@ -188,6 +190,7 @@ Tests:
   - resets DB
   - clears fault state
   - writes reset log
+  - preserves DataStore configuration
 
 ### EventScheduler
 
@@ -200,6 +203,14 @@ Tests:
 - reschedules queued events with zero delay when overdue
 - reschedules queued events with remaining delay when in future
 - applies network-required constraints to heartbeat and delivery work
+
+### BootReceiver
+
+Additional tests:
+- ignores unrelated broadcast actions
+- schedules recurring heartbeat work on `BOOT_COMPLETED`
+- schedules recurring heartbeat work on `LOCKED_BOOT_COMPLETED`
+- writes boot log only for boot actions
 
 ### AppWorkerFactory
 
@@ -256,9 +267,11 @@ Tests:
   - `setSkipCallLog(true)`
   - `setSkipNotification(true)`
 - enqueue failure stores catastrophic fault state
+- fault-state path does not clear existing config
 
 Note:
-- The design says call flow should log both enqueue and reject outcomes. Add a test once that logging exists in the implementation.
+- The design says call flow should log both enqueue and reject outcomes. Add a direct test once the implementation logs the reject outcome from `onScreenCall()` rather than only queueing.
+- Duplicate call-screening invocations should be allowed to create duplicate events, matching the design's duplicate-event rule.
 
 ## 5. Activity / UI Tests
 
@@ -282,6 +295,8 @@ Tests:
 - save button persists call config
 - save button writes configuration saved log
 - save button re-schedules recurring heartbeat work
+- blank method defaults to `POST`
+- blank content type defaults to `text/plain`
 
 ### MainActivity Status Indicators
 
@@ -300,6 +315,9 @@ Tests:
 - battery button launches `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`
 - call settings button launches `ACTION_MANAGE_DEFAULT_APPS_SETTINGS`
 - clear logs button clears persisted logs
+
+Note:
+- Robolectric coverage for the Activity Result permission launcher may require either a shadow-based assertion or a narrower test of the click wiring if direct request capture is not available.
 
 ## 6. HTTP Client Tests
 
@@ -332,6 +350,7 @@ Tests:
 - `BootReceiver` is registered for boot actions
 - `ForwardingCallScreeningService` is registered with `android.permission.BIND_SCREENING_SERVICE`
 - app uses `@xml/network_security_config`
+- app enables cleartext traffic for Android 9 HTTP support
 - raw CA resource `nixpkgs_cacert` is packaged and readable
 
 ## 8. Fault Recovery Behavior Tests
@@ -351,16 +370,14 @@ Tests:
 Currently implemented:
 - `PlaceholderRendererTest`
 - `MainActivityTest` smoke test
+- DAO, repository, worker, receiver/service, HTTP client, and resource tests
 
 High-priority tests to add next:
-1. `ConfigRepositoryTest`
-2. `EventRepositoryTest`
-3. `EventDeliveryWorkerTest`
-4. `HeartbeatWorkerTest`
-5. `SmsReceiverTest`
-6. `ForwardingCallScreeningServiceTest`
-7. `MainActivityStatusTest`
-8. `EventHttpClientTest`
+1. Real `SMS_RECEIVED_ACTION` / PDU entrypoint coverage if feasible under Robolectric
+2. Real `Call.Details` extraction coverage if feasible under Robolectric
+3. Main activity save-flow assertions for the saved log and recurring work reschedule
+4. Scheduler assertions for network constraints and 30-minute heartbeat cadence
+5. Remaining small unit/DAO coverage gaps (`observeLatest(limit)`, `deleteAll`, retry-delay cap persistence)
 
 ## 10. Notes
 
