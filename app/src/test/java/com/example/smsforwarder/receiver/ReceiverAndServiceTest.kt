@@ -276,6 +276,7 @@ class ReceiverAndServiceTest {
 
     @Test
     fun callStateReceiverIgnoresNonRingingState() = runBlocking {
+        val container = testAppContainer()
         val receiver = CallStateReceiver()
         val intent = Intent(TelephonyManager.ACTION_PHONE_STATE_CHANGED).apply {
             putExtra(TelephonyManager.EXTRA_STATE, TelephonyManager.EXTRA_STATE_IDLE)
@@ -284,7 +285,9 @@ class ReceiverAndServiceTest {
 
         receiver.onReceive(ApplicationProvider.getApplicationContext(), intent)
 
-        assertTrue(testAppContainer().eventRepository.allQueuedEvents().isEmpty())
+        waitFor { runBlocking { container.eventRepository.observeLogs().first().isNotEmpty() } }
+        assertTrue(container.eventRepository.allQueuedEvents().isEmpty())
+        assertTrue(container.eventRepository.observeLogs().first().first().text.contains("state=IDLE"))
     }
 
     @Test
@@ -315,6 +318,7 @@ class ReceiverAndServiceTest {
 
         waitFor { runBlocking { container.eventRepository.allQueuedEvents().size == 1 } }
         assertEquals("+1777", container.eventRepository.allQueuedEvents().single().number)
+        assertTrue(container.eventRepository.observeLogs().first().any { it.text.contains("Telephony broadcast:") })
         assertTrue(container.eventRepository.observeLogs().first().any { it.text == "Queued call event 1 via telephony" })
     }
 
