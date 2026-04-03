@@ -13,6 +13,12 @@ class HeartbeatWorker(
     private val appContainer: AppContainer = (appContext.applicationContext as SmsForwarderApp).appContainer,
 ) : CoroutineWorker(appContext, workerParameters) {
 
+    constructor(appContext: Context, workerParameters: WorkerParameters) : this(
+        appContext,
+        workerParameters,
+        (appContext.applicationContext as SmsForwarderApp).appContainer,
+    )
+
     override suspend fun doWork(): Result {
         val now = System.currentTimeMillis()
         val faultState = appContainer.configRepository.getFaultState()

@@ -14,27 +14,34 @@ class ForwardingCallScreeningService : CallScreeningService() {
         val appContainer = (applicationContext as SmsForwarderApp).appContainer
 
         CoroutineScope(Dispatchers.IO).launch {
-            try {
-                appContainer.configRepository.setCallScreeningSeenAt(timestamp)
-                val id = appContainer.eventRepository.enqueueCall(number, timestamp)
-                appContainer.scheduler.enqueueDelivery(id)
-                appContainer.eventRepository.addLog("Queued call event $id")
-            } catch (error: Exception) {
-                appContainer.configRepository.setFaultState(
-                    reason = "Call enqueue failed: ${error.message ?: error::class.java.simpleName}",
-                    timestamp = timestamp,
-                )
-            }
+            handleCall(appContainer, number, timestamp)
         }
 
-        respondToCall(
-            callDetails,
-            CallResponse.Builder()
-                .setDisallowCall(true)
-                .setRejectCall(true)
-                .setSkipCallLog(true)
-                .setSkipNotification(true)
-                .build(),
-        )
+        respond(callDetails, rejectionResponse())
+    }
+
+    internal suspend fun handleCall(appContainer: com.example.smsforwarder.AppContainer, number: String, timestamp: Long) {
+        try {
+            appContainer.configRepository.setCallScreeningSeenAt(timestamp)
+            val id = appContainer.eventRepository.enqueueCall(number, timestamp)
+            appContainer.scheduler.enqueueDelivery(id)
+            appContainer.eventRepository.addLog("Queued call event $id")
+        } catch (error: Exception) {
+            appContainer.configRepository.setFaultState(
+                reason = "Call enqueue failed: ${error.message ?: error::class.java.simpleName}",
+                timestamp = timestamp,
+            )
+        }
+    }
+
+    internal fun rejectionResponse(): CallResponse = CallResponse.Builder()
+        .setDisallowCall(true)
+        .setRejectCall(true)
+        .setSkipCallLog(true)
+        .setSkipNotification(true)
+        .build()
+
+    internal fun respond(callDetails: Call.Details, response: CallResponse) {
+        respondToCall(callDetails, response)
     }
 }

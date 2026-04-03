@@ -13,12 +13,12 @@ import com.example.smsforwarder.data.QueueDao
 import java.time.Duration
 import java.util.concurrent.TimeUnit
 
-class EventScheduler(
-    private val context: Context,
-    private val workManager: WorkManager,
-    private val queueDao: QueueDao,
+open class EventScheduler(
+    protected val context: Context,
+    protected val workManager: WorkManager,
+    protected val queueDao: QueueDao,
 ) {
-    fun ensureRecurringWork() {
+    open fun ensureRecurringWork() {
         val heartbeat = PeriodicWorkRequestBuilder<HeartbeatWorker>(30, TimeUnit.MINUTES)
             .setConstraints(networkConstraints())
             .build()
@@ -29,7 +29,7 @@ class EventScheduler(
         )
     }
 
-    fun enqueueDelivery(eventId: Long, delayMillis: Long = 0) {
+    open fun enqueueDelivery(eventId: Long, delayMillis: Long = 0) {
         val request = OneTimeWorkRequestBuilder<EventDeliveryWorker>()
             .setConstraints(networkConstraints())
             .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
@@ -42,7 +42,7 @@ class EventScheduler(
         )
     }
 
-    suspend fun rescheduleQueuedEvents() {
+    open suspend fun rescheduleQueuedEvents() {
         val now = System.currentTimeMillis()
         queueDao.getAll().forEach { event ->
             enqueueDelivery(event.id, (event.nextAttemptAt - now).coerceAtLeast(0))

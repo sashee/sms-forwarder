@@ -20,10 +20,18 @@ data class HttpRequest(
     val body: String,
 )
 
-class EventHttpClient(private val context: Context) {
+interface HttpSender {
+    fun send(request: HttpRequest): Int
+}
+
+open class EventHttpClient(
+    private val context: Context,
+    private val trustAnchorResourceId: Int = R.raw.nixpkgs_cacert,
+    private val trustAnchorOpener: (() -> InputStream)? = null,
+) : HttpSender {
     private val sslSocketFactory by lazy { buildSslContext().socketFactory }
 
-    fun send(request: HttpRequest): Int {
+    override fun send(request: HttpRequest): Int {
         val connection = URL(request.url).openConnection() as HttpURLConnection
         if (connection is HttpsURLConnection) {
             connection.sslSocketFactory = sslSocketFactory
@@ -47,7 +55,7 @@ class EventHttpClient(private val context: Context) {
 
     private fun buildSslContext(): SSLContext {
         val certificateFactory = CertificateFactory.getInstance("X.509")
-        val certificates = context.resources.openRawResource(R.raw.nixpkgs_cacert).use { input ->
+        val certificates = openTrustAnchorStream().use { input ->
             certificateFactory.generateCertificates(BufferedInputStream(input))
         }
         val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
@@ -64,5 +72,9 @@ class EventHttpClient(private val context: Context) {
         return SSLContext.getInstance("TLS").apply {
             init(null, trustManagerFactory.trustManagers, SecureRandom())
         }
+    }
+
+    private fun openTrustAnchorStream(): InputStream {
+        return trustAnchorOpener?.invoke() ?: context.resources.openRawResource(trustAnchorResourceId)
     }
 }

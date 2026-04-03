@@ -19,26 +19,44 @@ class SmsReceiver : BroadcastReceiver() {
         val appContainer = (context.applicationContext as SmsForwarderApp).appContainer
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                Telephony.Sms.Intents.getMessagesFromIntent(intent).forEach { smsMessage ->
-                    try {
-                        val id = appContainer.eventRepository.enqueueSms(
-                            number = smsMessage.displayOriginatingAddress.orEmpty(),
-                            text = smsMessage.messageBody.orEmpty(),
-                            timestamp = smsMessage.timestampMillis,
-                        )
-                        appContainer.scheduler.enqueueDelivery(id)
-                        appContainer.eventRepository.addLog("Queued SMS event $id")
-                    } catch (error: Exception) {
-                        val timestamp = System.currentTimeMillis()
-                        appContainer.configRepository.setFaultState(
-                            reason = "SMS enqueue failed: ${error.message ?: error::class.java.simpleName}",
-                            timestamp = timestamp,
-                        )
-                    }
-                }
+                handleMessages(appContainer, messagesFromIntent(intent))
             } finally {
                 pendingResult.finish()
             }
         }
     }
+
+    internal fun messagesFromIntent(intent: Intent): List<IncomingSms> = Telephony.Sms.Intents.getMessagesFromIntent(intent).map {
+        IncomingSms(
+            number = it.displayOriginatingAddress.orEmpty(),
+            text = it.messageBody.orEmpty(),
+            timestamp = it.timestampMillis,
+        )
+    }
+
+    internal suspend fun handleMessages(appContainer: com.example.smsforwarder.AppContainer, messages: List<IncomingSms>) {
+        messages.forEach { smsMessage ->
+            try {
+                val id = appContainer.eventRepository.enqueueSms(
+                    number = smsMessage.number,
+                    text = smsMessage.text,
+                    timestamp = smsMessage.timestamp,
+                )
+                appContainer.scheduler.enqueueDelivery(id)
+                appContainer.eventRepository.addLog("Queued SMS event $id")
+            } catch (error: Exception) {
+                val timestamp = System.currentTimeMillis()
+                appContainer.configRepository.setFaultState(
+                    reason = "SMS enqueue failed: ${error.message ?: error::class.java.simpleName}",
+                    timestamp = timestamp,
+                )
+            }
+        }
+    }
+
+    internal data class IncomingSms(
+        val number: String,
+        val text: String,
+        val timestamp: Long,
+    )
 }

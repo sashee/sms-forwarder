@@ -8,46 +8,46 @@ import com.example.smsforwarder.model.EventConfig
 import com.example.smsforwarder.model.EventType
 import com.example.smsforwarder.util.PlaceholderRenderer
 
-class EventRepository(
+open class EventRepository(
     private val context: Context,
     private val database: AppDatabase,
     private val configRepository: ConfigRepository,
 ) {
-    fun observeLogs(limit: Int = 100): Flow<List<LogEntryEntity>> = database.logDao().observeLatest(limit)
+    open fun observeLogs(limit: Int = 100): Flow<List<LogEntryEntity>> = database.logDao().observeLatest(limit)
 
-    suspend fun enqueueSms(number: String, text: String, timestamp: Long): Long {
+    open suspend fun enqueueSms(number: String, text: String, timestamp: Long): Long {
         val config = configRepository.getConfig().sms
         return enqueueConfiguredEvent(EventType.SMS, config, number, text, timestamp)
     }
 
-    suspend fun enqueueCall(number: String, timestamp: Long): Long {
+    open suspend fun enqueueCall(number: String, timestamp: Long): Long {
         val config = configRepository.getConfig().call
         return enqueueConfiguredEvent(EventType.CALL, config, number, "", timestamp)
     }
 
-    suspend fun heartbeatConfig(): EventConfig = configRepository.getConfig().heartbeat
+    open suspend fun heartbeatConfig(): EventConfig = configRepository.getConfig().heartbeat
 
-    suspend fun addLog(text: String, timestamp: Long = System.currentTimeMillis()) {
+    open suspend fun addLog(text: String, timestamp: Long = System.currentTimeMillis()) {
         database.logDao().insert(LogEntryEntity(timestamp = timestamp, text = text))
     }
 
-    suspend fun clearLogs() {
+    open suspend fun clearLogs() {
         database.logDao().deleteAll()
     }
 
-    suspend fun getQueuedEvent(id: Long): QueuedEventEntity? = database.queueDao().getById(id)
+    open suspend fun getQueuedEvent(id: Long): QueuedEventEntity? = database.queueDao().getById(id)
 
-    suspend fun markDelivered(id: Long) {
+    open suspend fun markDelivered(id: Long) {
         database.queueDao().deleteById(id)
     }
 
-    suspend fun scheduleRetry(id: Long, attemptCount: Int, nextAttemptAt: Long) {
+    open suspend fun scheduleRetry(id: Long, attemptCount: Int, nextAttemptAt: Long) {
         database.queueDao().updateAttempt(id, attemptCount, nextAttemptAt)
     }
 
-    suspend fun allQueuedEvents(): List<QueuedEventEntity> = database.queueDao().getAll()
+    open suspend fun allQueuedEvents(): List<QueuedEventEntity> = database.queueDao().getAll()
 
-    suspend fun resetDatabase(reason: String, resetTimestamp: Long) {
+    open suspend fun resetDatabase(reason: String, resetTimestamp: Long) {
         database.queueDao().deleteAll()
         database.logDao().deleteAll()
         addLog(

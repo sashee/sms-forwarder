@@ -4,14 +4,20 @@ import android.app.Application
 import androidx.work.Configuration
 import com.example.smsforwarder.work.AppWorkerFactory
 
-class SmsForwarderApp : Application(), Configuration.Provider {
+open class SmsForwarderApp : Application(), Configuration.Provider {
     lateinit var appContainer: AppContainer
-        private set
+        protected set
 
     override fun onCreate() {
         super.onCreate()
-        appContainer = AppContainer(this)
+        appContainer = createAppContainer()
         appContainer.scheduler.ensureRecurringWork()
+    }
+
+    protected open fun createAppContainer(): AppContainer = AppContainer(this)
+
+    internal fun replaceAppContainerForTest(appContainer: AppContainer) {
+        this.appContainer = appContainer
     }
 
     override val workManagerConfiguration: Configuration

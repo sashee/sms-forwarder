@@ -14,6 +14,12 @@ class EventDeliveryWorker(
     private val appContainer: AppContainer = (appContext.applicationContext as SmsForwarderApp).appContainer,
 ) : CoroutineWorker(appContext, workerParameters) {
 
+    constructor(appContext: Context, workerParameters: WorkerParameters) : this(
+        appContext,
+        workerParameters,
+        (appContext.applicationContext as SmsForwarderApp).appContainer,
+    )
+
     override suspend fun doWork(): Result {
         val eventId = inputData.getLong(KEY_EVENT_ID, -1L)
         if (eventId <= 0L) {
@@ -44,20 +50,20 @@ class EventDeliveryWorker(
     }
 
     private suspend fun scheduleRetry(eventId: Long, attemptCount: Int, reason: String) {
-        val delayMillis = retryDelayMillis(attemptCount)
+        val delayMillis = retryDelayMillisForAttempt(attemptCount)
         val nextAttemptAt = System.currentTimeMillis() + delayMillis
         appContainer.eventRepository.scheduleRetry(eventId, attemptCount, nextAttemptAt)
         appContainer.eventRepository.addLog("Retry scheduled for event $eventId in ${delayMillis / 1000}s: $reason")
         appContainer.scheduler.enqueueDelivery(eventId, delayMillis)
     }
 
-    private fun retryDelayMillis(attemptCount: Int): Long {
-        val exponentialMinutes = 2.0.pow((attemptCount - 1).coerceAtLeast(0)).toLong() * 15L
-        return (exponentialMinutes * 60_000L).coerceAtMost(MAX_DELAY_MILLIS)
-    }
-
     companion object {
         const val KEY_EVENT_ID = "event_id"
         private const val MAX_DELAY_MILLIS = 24L * 60L * 60L * 1000L
+
+        internal fun retryDelayMillisForAttempt(attemptCount: Int): Long {
+            val exponentialMinutes = 2.0.pow((attemptCount - 1).coerceAtLeast(0)).toLong() * 15L
+            return (exponentialMinutes * 60_000L).coerceAtMost(MAX_DELAY_MILLIS)
+        }
     }
 }

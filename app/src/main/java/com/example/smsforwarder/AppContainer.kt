@@ -7,32 +7,33 @@ import com.example.smsforwarder.data.AppDatabase
 import com.example.smsforwarder.data.ConfigRepository
 import com.example.smsforwarder.data.EventRepository
 import com.example.smsforwarder.net.EventHttpClient
+import com.example.smsforwarder.net.HttpSender
 import com.example.smsforwarder.work.EventScheduler
 
-class AppContainer(context: Context) {
-    private val appContext = context.applicationContext
+open class AppContainer(context: Context) {
+    protected val appContext = context.applicationContext
 
-    val database: AppDatabase by lazy {
+    open val database: AppDatabase by lazy {
         Room.databaseBuilder(appContext, AppDatabase::class.java, AppDatabase.DB_NAME).build()
     }
 
-    val configRepository: ConfigRepository by lazy {
+    open val configRepository: ConfigRepository by lazy {
         ConfigRepository(appContext)
     }
 
-    val httpClient: EventHttpClient by lazy {
+    open val httpClient: HttpSender by lazy {
         EventHttpClient(appContext)
     }
 
-    val eventRepository: EventRepository by lazy {
+    open val eventRepository: EventRepository by lazy {
         EventRepository(appContext, database, configRepository)
     }
 
-    val workManager: WorkManager by lazy {
+    open val workManager: WorkManager by lazy {
         WorkManager.getInstance(appContext)
     }
 
-    val scheduler: EventScheduler by lazy {
+    open val scheduler: EventScheduler by lazy {
         EventScheduler(appContext, workManager, database.queueDao())
     }
 }

@@ -67,6 +67,12 @@ class ConfigRepository(private val context: Context) {
         }
     }
 
+    suspend fun clearCallScreeningSeenAt() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(longPreferencesKey("call_screening.last_seen_at"))
+        }
+    }
+
     suspend fun getCallScreeningSeenAt(): Long? = callScreeningSeenAtFlow.firstValue()
 
     private fun Preferences.toEventConfig(prefix: String): EventConfig = EventConfig(
