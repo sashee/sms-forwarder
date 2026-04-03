@@ -61,6 +61,10 @@ class ConfigRepository(private val context: Context) {
         preferences[longPreferencesKey("call_screening.last_seen_at")]
     }
 
+    val telephonyCallSeenAtFlow: Flow<Long?> = context.dataStore.data.map { preferences ->
+        preferences[longPreferencesKey("telephony_call.last_seen_at")]
+    }
+
     suspend fun setCallScreeningSeenAt(timestamp: Long) {
         context.dataStore.edit { preferences ->
             preferences[longPreferencesKey("call_screening.last_seen_at")] = timestamp
@@ -74,6 +78,20 @@ class ConfigRepository(private val context: Context) {
     }
 
     suspend fun getCallScreeningSeenAt(): Long? = callScreeningSeenAtFlow.firstValue()
+
+    suspend fun setTelephonyCallSeenAt(timestamp: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[longPreferencesKey("telephony_call.last_seen_at")] = timestamp
+        }
+    }
+
+    suspend fun clearTelephonyCallSeenAt() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(longPreferencesKey("telephony_call.last_seen_at"))
+        }
+    }
+
+    suspend fun getTelephonyCallSeenAt(): Long? = telephonyCallSeenAtFlow.firstValue()
 
     private fun Preferences.toEventConfig(prefix: String): EventConfig = EventConfig(
         url = this[stringPreferencesKey("$prefix.url")] ?: "",

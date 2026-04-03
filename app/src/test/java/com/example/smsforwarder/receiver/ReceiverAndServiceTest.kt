@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Telephony
+import android.telephony.TelephonyManager
 import android.telephony.SmsMessage
 import android.telecom.Call
 import android.telecom.DisconnectCause
@@ -177,12 +178,12 @@ class ReceiverAndServiceTest {
         container.configRepository.saveConfig(AppConfig(call = EventConfig("http://call", "POST", "text/plain", "body")))
         val service = ForwardingCallScreeningService()
 
-        service.handleCall(container, "+1888", 123L)
+        service.handleCall(container, "+1888", 123L, "screening")
 
         assertEquals(123L, container.configRepository.getCallScreeningSeenAt())
         assertEquals(1, container.eventRepository.allQueuedEvents().size)
         assertEquals(1, container.scheduler.enqueuedDeliveries.size)
-        assertEquals("Queued call event 1", container.eventRepository.observeLogs().first().last().text)
+        assertEquals("Queued call event 1 via screening", container.eventRepository.observeLogs().first().last().text)
     }
 
     @Test
@@ -191,8 +192,8 @@ class ReceiverAndServiceTest {
         container.configRepository.saveConfig(AppConfig(call = EventConfig("http://call", "POST", "text/plain", "body")))
         val service = ForwardingCallScreeningService()
 
-        service.handleCall(container, "+1888", 123L)
-        service.handleCall(container, "+1888", 123L)
+        service.handleCall(container, "+1888", 123L, "screening")
+        service.handleCall(container, "+1888", 123L, "screening")
 
         assertEquals(2, container.eventRepository.allQueuedEvents().size)
         assertEquals(2, container.scheduler.enqueuedDeliveries.size)
@@ -218,7 +219,7 @@ class ReceiverAndServiceTest {
         assertTrue(responseInput.callResponse.disallowCall)
         assertTrue(responseInput.callResponse.rejectCall)
         assertEquals("+1888", container.eventRepository.allQueuedEvents().single().number)
-        assertTrue(container.eventRepository.observeLogs().first().any { it.text == "Queued call event 1" })
+        assertTrue(container.eventRepository.observeLogs().first().any { it.text == "Queued call event 1 via screening" })
     }
 
     @Test
@@ -252,7 +253,7 @@ class ReceiverAndServiceTest {
         container.configRepository.saveConfig(originalConfig)
         val service = ForwardingCallScreeningService()
 
-        service.handleCall(container, "", 456L)
+        service.handleCall(container, "", 456L, "screening")
 
         assertTrue(container.configRepository.getFaultState()!!.reason.contains("Call enqueue failed"))
         assertEquals(originalConfig, container.configRepository.getConfig())
@@ -262,6 +263,59 @@ class ReceiverAndServiceTest {
         assertTrue(response.skipCallLog)
         assertTrue(response.skipNotification)
         assertNull(container.configRepository.getCallScreeningSeenAt()?.takeIf { it == 0L })
+    }
+
+    @Test
+    fun callStateReceiverIgnoresUnrelatedAction() = runBlocking {
+        val receiver = CallStateReceiver()
+
+        receiver.onReceive(ApplicationProvider.getApplicationContext(), Intent("other"))
+
+        assertTrue(testAppContainer().eventRepository.allQueuedEvents().isEmpty())
+    }
+
+    @Test
+    fun callStateReceiverIgnoresNonRingingState() = runBlocking {
+        val receiver = CallStateReceiver()
+        val intent = Intent(TelephonyManager.ACTION_PHONE_STATE_CHANGED).apply {
+            putExtra(TelephonyManager.EXTRA_STATE, TelephonyManager.EXTRA_STATE_IDLE)
+            putExtra(TelephonyManager.EXTRA_INCOMING_NUMBER, "+1777")
+        }
+
+        receiver.onReceive(ApplicationProvider.getApplicationContext(), intent)
+
+        assertTrue(testAppContainer().eventRepository.allQueuedEvents().isEmpty())
+    }
+
+    @Test
+    fun callStateReceiverQueuesCallAndTracksFallbackStatus() = runBlocking {
+        val container = testAppContainer()
+        container.configRepository.saveConfig(AppConfig(call = EventConfig("http://call", "POST", "text/plain", "body")))
+        val receiver = CallStateReceiver()
+
+        receiver.handleIncomingCall(container, "+1777", 789L)
+
+        assertEquals(789L, container.configRepository.getTelephonyCallSeenAt())
+        assertEquals(1, container.eventRepository.allQueuedEvents().size)
+        assertEquals(1, container.scheduler.enqueuedDeliveries.size)
+        assertEquals("Queued call event 1 via telephony", container.eventRepository.observeLogs().first().last().text)
+    }
+
+    @Test
+    fun callStateReceiverOnReceiveHandlesRingingIntent() = runBlocking {
+        val container = testAppContainer()
+        container.configRepository.saveConfig(AppConfig(call = EventConfig("http://call", "POST", "text/plain", "body")))
+        val receiver = CallStateReceiver()
+        val intent = Intent(TelephonyManager.ACTION_PHONE_STATE_CHANGED).apply {
+            putExtra(TelephonyManager.EXTRA_STATE, TelephonyManager.EXTRA_STATE_RINGING)
+            putExtra(TelephonyManager.EXTRA_INCOMING_NUMBER, "+1777")
+        }
+
+        receiver.onReceive(ApplicationProvider.getApplicationContext(), intent)
+
+        waitFor { runBlocking { container.eventRepository.allQueuedEvents().size == 1 } }
+        assertEquals("+1777", container.eventRepository.allQueuedEvents().single().number)
+        assertTrue(container.eventRepository.observeLogs().first().any { it.text == "Queued call event 1 via telephony" })
     }
 
     private fun callDetails(handle: Uri?): Call.Details = ReflectionHelpers.callConstructor(

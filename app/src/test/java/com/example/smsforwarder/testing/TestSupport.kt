@@ -120,6 +120,7 @@ fun installTestContainer(factory: (Context) -> AppContainer = { TestAppContainer
                 container.configRepository.saveConfig(AppConfig())
                 container.configRepository.clearFaultState()
                 container.configRepository.clearCallScreeningSeenAt()
+                container.configRepository.clearTelephonyCallSeenAt()
             }
         }
     }

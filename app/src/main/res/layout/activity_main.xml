@@ -36,6 +36,18 @@
             android:text="Call screening enabled: NOK" />
 
         <TextView
+            android:id="@+id/statusTelephonyFallback"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Telephony fallback seen: NOK" />
+
+        <TextView
+            android:id="@+id/statusPhone"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Phone permissions: NOK" />
+
+        <TextView
             android:id="@+id/statusBattery"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -53,6 +65,12 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Open call screening settings" />
+
+        <Button
+            android:id="@+id/buttonRequestPhone"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Request phone permissions" />
 
         <Button
             android:id="@+id/buttonBattery"

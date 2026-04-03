@@ -7,6 +7,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import androidx.test.core.app.ApplicationProvider
 import com.example.smsforwarder.receiver.BootReceiver
+import com.example.smsforwarder.receiver.CallStateReceiver
 import com.example.smsforwarder.receiver.SmsReceiver
 import com.example.smsforwarder.telecom.ForwardingCallScreeningService
 import org.junit.Assert.assertEquals
@@ -30,9 +31,12 @@ class ManifestAndResourceTest {
         val service = packageInfo.services.single { it.name.endsWith("ForwardingCallScreeningService") }
 
         assertTrue(permissions.contains(Manifest.permission.RECEIVE_SMS))
+        assertTrue(permissions.contains(Manifest.permission.READ_PHONE_STATE))
+        assertTrue(permissions.contains(Manifest.permission.READ_CALL_LOG))
         assertTrue(permissions.contains(Manifest.permission.RECEIVE_BOOT_COMPLETED))
         assertTrue(permissions.contains(Manifest.permission.INTERNET))
         assertTrue(packageInfo.receivers.any { it.name.endsWith("SmsReceiver") })
+        assertTrue(packageInfo.receivers.any { it.name.endsWith("CallStateReceiver") })
         assertTrue(packageInfo.receivers.any { it.name.endsWith("BootReceiver") })
         assertTrue(packageInfo.services.any { it.name.endsWith("ForwardingCallScreeningService") })
         assertEquals(Manifest.permission.BIND_SCREENING_SERVICE, service.permission)
@@ -48,6 +52,10 @@ class ManifestAndResourceTest {
             Intent(Intent.ACTION_BOOT_COMPLETED).setPackage(context.packageName),
             0,
         )
+        val phoneStateReceivers = packageManager.queryBroadcastReceivers(
+            Intent("android.intent.action.PHONE_STATE").setPackage(context.packageName),
+            0,
+        )
         val lockedBootReceivers = packageManager.queryBroadcastReceivers(
             Intent(Intent.ACTION_LOCKED_BOOT_COMPLETED).setPackage(context.packageName),
             0,
@@ -59,6 +67,7 @@ class ManifestAndResourceTest {
         val applicationInfo = context.applicationInfo
 
         assertTrue(smsReceivers.any { it.activityInfo.name == SmsReceiver::class.java.name })
+        assertTrue(phoneStateReceivers.any { it.activityInfo.name == CallStateReceiver::class.java.name })
         assertTrue(bootReceivers.any { it.activityInfo.name == BootReceiver::class.java.name })
         assertTrue(lockedBootReceivers.any { it.activityInfo.name == BootReceiver::class.java.name })
         assertEquals(Manifest.permission.BIND_SCREENING_SERVICE, serviceInfo.permission)

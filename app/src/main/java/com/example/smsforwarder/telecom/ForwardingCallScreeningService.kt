@@ -15,7 +15,7 @@ class ForwardingCallScreeningService : CallScreeningService() {
         val response = rejectionResponse()
 
         CoroutineScope(Dispatchers.IO).launch {
-            handleCall(appContainer, number, timestamp)
+            handleCall(appContainer, number, timestamp, "screening")
             try {
                 respond(callDetails, response)
                 appContainer.eventRepository.addLog("Rejected call")
@@ -25,18 +25,17 @@ class ForwardingCallScreeningService : CallScreeningService() {
         }
     }
 
-    internal suspend fun handleCall(appContainer: com.example.smsforwarder.AppContainer, number: String, timestamp: Long) {
-        try {
-            appContainer.configRepository.setCallScreeningSeenAt(timestamp)
-            val id = appContainer.eventRepository.enqueueCall(number, timestamp)
-            appContainer.scheduler.enqueueDelivery(id)
-            appContainer.eventRepository.addLog("Queued call event $id")
-        } catch (error: Exception) {
-            appContainer.configRepository.setFaultState(
-                reason = "Call enqueue failed: ${error.message ?: error::class.java.simpleName}",
-                timestamp = timestamp,
-            )
+    internal suspend fun handleCall(
+        appContainer: com.example.smsforwarder.AppContainer,
+        number: String,
+        timestamp: Long,
+        source: String,
+    ) {
+        val callSource = when (source) {
+            "telephony" -> CallEventHandler.Source.TELEPHONY
+            else -> CallEventHandler.Source.SCREENING
         }
+        CallEventHandler.handleIncomingCall(appContainer, number, timestamp, callSource)
     }
 
     internal fun rejectionResponse(): CallResponse = CallResponse.Builder()

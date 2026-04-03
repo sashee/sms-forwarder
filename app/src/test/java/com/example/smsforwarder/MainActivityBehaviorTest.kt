@@ -56,7 +56,12 @@ class MainActivityBehaviorTest {
             ),
         )
         container.configRepository.setCallScreeningSeenAt(System.currentTimeMillis())
-        shadowOf(ApplicationProvider.getApplicationContext<Application>()).grantPermissions(Manifest.permission.RECEIVE_SMS)
+        container.configRepository.setTelephonyCallSeenAt(System.currentTimeMillis())
+        shadowOf(ApplicationProvider.getApplicationContext<Application>()).grantPermissions(
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.READ_CALL_LOG,
+        )
 
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().resume().get()
 
@@ -64,6 +69,8 @@ class MainActivityBehaviorTest {
         assertEquals("http://sms", activity.findViewById<EditText>(R.id.smsUrl).text.toString())
         assertEquals("SMS permission: OK", activity.findViewById<TextView>(R.id.statusSms).text.toString())
         assertEquals("Call screening enabled: OK", activity.findViewById<TextView>(R.id.statusCallScreening).text.toString())
+        assertEquals("Telephony fallback seen: OK", activity.findViewById<TextView>(R.id.statusTelephonyFallback).text.toString())
+        assertEquals("Phone permissions: OK", activity.findViewById<TextView>(R.id.statusPhone).text.toString())
         assertEquals("Battery optimization exemption: NOK", activity.findViewById<TextView>(R.id.statusBattery).text.toString())
         assertEquals(
             activity.getString(R.string.heartbeat_body_example),
@@ -96,6 +103,8 @@ class MainActivityBehaviorTest {
 
         assertEquals("SMS permission: NOK", activity.findViewById<TextView>(R.id.statusSms).text.toString())
         assertEquals("Call screening enabled: NOK", activity.findViewById<TextView>(R.id.statusCallScreening).text.toString())
+        assertEquals("Telephony fallback seen: NOK", activity.findViewById<TextView>(R.id.statusTelephonyFallback).text.toString())
+        assertEquals("Phone permissions: NOK", activity.findViewById<TextView>(R.id.statusPhone).text.toString())
         assertEquals("Battery optimization exemption: NOK", activity.findViewById<TextView>(R.id.statusBattery).text.toString())
     }
 
@@ -193,5 +202,25 @@ class MainActivityBehaviorTest {
         }
         val requestedPermissions = permissionsField.get(permissionsRequest) as Array<*>
         assertEquals(listOf(Manifest.permission.RECEIVE_SMS), requestedPermissions.toList())
+    }
+
+    @Test
+    fun phonePermissionButtonRequestsPhoneAndCallLogPermissions() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().resume().get()
+
+        activity.findViewById<Button>(R.id.buttonRequestPhone).performClick()
+
+        val permissionsRequest = shadowOf(activity)
+            .javaClass
+            .getMethod("getLastRequestedPermission")
+            .invoke(shadowOf(activity))
+        val permissionsField = permissionsRequest.javaClass.getDeclaredField("requestedPermissions").apply {
+            isAccessible = true
+        }
+        val requestedPermissions = permissionsField.get(permissionsRequest) as Array<*>
+        assertEquals(
+            listOf(Manifest.permission.READ_PHONE_STATE, Manifest.permission.READ_CALL_LOG),
+            requestedPermissions.toList(),
+        )
     }
 }

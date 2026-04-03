@@ -25,6 +25,9 @@ class MainActivity : AppCompatActivity() {
     private val requestSmsPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         refreshStatus()
     }
+    private val requestPhonePermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        refreshStatus()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,6 +35,9 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.buttonRequestSms).setOnClickListener {
             requestSmsPermission.launch(Manifest.permission.RECEIVE_SMS)
+        }
+        findViewById<Button>(R.id.buttonRequestPhone).setOnClickListener {
+            requestPhonePermissions.launch(arrayOf(Manifest.permission.READ_PHONE_STATE, Manifest.permission.READ_CALL_LOG))
         }
         findViewById<Button>(R.id.buttonCallSettings).setOnClickListener {
             openCallScreeningSettings()
@@ -70,16 +76,23 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshStatus() {
         val smsGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
+        val phoneGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+        val callLogGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
         val powerManager = getSystemService(PowerManager::class.java)
         val ignoringOptimizations = powerManager?.isIgnoringBatteryOptimizations(packageName) == true
 
         findViewById<TextView>(R.id.statusSms).text = "SMS permission: ${statusText(smsGranted)}"
+        findViewById<TextView>(R.id.statusPhone).text = "Phone permissions: ${statusText(phoneGranted && callLogGranted)}"
         findViewById<TextView>(R.id.statusBattery).text = "Battery optimization exemption: ${statusText(ignoringOptimizations)}"
 
         lifecycleScope.launch {
-            val lastSeenAt = appContainer.configRepository.getCallScreeningSeenAt()
-            val callScreeningEnabled = lastSeenAt != null && (System.currentTimeMillis() - lastSeenAt) < CALL_SCREENING_STATUS_WINDOW_MILLIS
+            val now = System.currentTimeMillis()
+            val screeningSeenAt = appContainer.configRepository.getCallScreeningSeenAt()
+            val telephonySeenAt = appContainer.configRepository.getTelephonyCallSeenAt()
+            val callScreeningEnabled = screeningSeenAt != null && (now - screeningSeenAt) < CALL_STATUS_WINDOW_MILLIS
+            val telephonyFallbackEnabled = telephonySeenAt != null && (now - telephonySeenAt) < CALL_STATUS_WINDOW_MILLIS
             findViewById<TextView>(R.id.statusCallScreening).text = "Call screening enabled: ${statusText(callScreeningEnabled)}"
+            findViewById<TextView>(R.id.statusTelephonyFallback).text = "Telephony fallback seen: ${statusText(telephonyFallbackEnabled)}"
         }
     }
 
@@ -137,6 +150,6 @@ class MainActivity : AppCompatActivity() {
     private fun statusText(ok: Boolean): String = if (ok) getString(R.string.status_ok) else getString(R.string.status_nok)
 
     companion object {
-        private const val CALL_SCREENING_STATUS_WINDOW_MILLIS = 30L * 24L * 60L * 60L * 1000L
+        private const val CALL_STATUS_WINDOW_MILLIS = 30L * 24L * 60L * 60L * 1000L
     }
 }
