@@ -22,6 +22,8 @@ object CallEventHandler {
                 reason = "Call enqueue failed: ${error.message ?: error::class.java.simpleName}",
                 timestamp = timestamp,
             )
+        } finally {
+            appContainer.scheduler.ensureHeartbeatScheduled("call:${source.logLabel}", startServiceIfOverdue = true)
         }
     }
 }

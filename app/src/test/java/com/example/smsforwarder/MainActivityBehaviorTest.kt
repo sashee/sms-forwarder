@@ -72,6 +72,7 @@ class MainActivityBehaviorTest {
         assertEquals("Telephony fallback seen: OK", activity.findViewById<TextView>(R.id.statusTelephonyFallback).text.toString())
         assertEquals("Phone permissions: OK", activity.findViewById<TextView>(R.id.statusPhone).text.toString())
         assertEquals("Battery optimization exemption: NOK", activity.findViewById<TextView>(R.id.statusBattery).text.toString())
+        assertTrue(container.scheduler.heartbeatRepairCount >= 1)
         assertEquals(
             activity.getString(R.string.heartbeat_body_example),
             activity.findViewById<TextView>(R.id.heartbeatBodyExample).text.toString(),
@@ -159,12 +160,14 @@ class MainActivityBehaviorTest {
         }
 
         assertEquals(1, container.scheduler.heartbeatScheduledCount)
+        assertTrue(container.scheduler.heartbeatRepairCount >= 2)
         assertEquals("Configuration saved", container.eventRepository.observeLogs().first().first().text)
     }
 
     @Test
     fun clearLogsAndLaunchButtonsWork() = runBlocking {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().resume().get()
+        testAppContainer().eventRepository.clearLogs()
         testAppContainer().eventRepository.addLog("hello", 1L)
         Robolectric.flushForegroundThreadScheduler()
 
@@ -190,11 +193,11 @@ class MainActivityBehaviorTest {
     @Test
     fun logViewShowsOnlyLatestHundredEntries() = runBlocking {
         val container = testAppContainer()
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().resume().get()
+        container.eventRepository.clearLogs()
         repeat(105) { index ->
             container.eventRepository.addLog("log-$index", index.toLong())
         }
-
-        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().resume().get()
 
         waitFor {
             shadowOf(Looper.getMainLooper()).idle()

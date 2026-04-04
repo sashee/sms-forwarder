@@ -35,22 +35,26 @@ class SmsReceiver : BroadcastReceiver() {
     }
 
     internal suspend fun handleMessages(appContainer: com.example.smsforwarder.AppContainer, messages: List<IncomingSms>) {
-        messages.forEach { smsMessage ->
-            try {
-                val id = appContainer.eventRepository.enqueueSms(
-                    number = smsMessage.number,
-                    text = smsMessage.text,
-                    timestamp = smsMessage.timestamp,
-                )
-                appContainer.scheduler.enqueueDelivery(id)
-                appContainer.eventRepository.addLog("Queued SMS event $id")
-            } catch (error: Exception) {
-                val timestamp = System.currentTimeMillis()
-                appContainer.configRepository.setFaultState(
-                    reason = "SMS enqueue failed: ${error.message ?: error::class.java.simpleName}",
-                    timestamp = timestamp,
-                )
+        try {
+            messages.forEach { smsMessage ->
+                try {
+                    val id = appContainer.eventRepository.enqueueSms(
+                        number = smsMessage.number,
+                        text = smsMessage.text,
+                        timestamp = smsMessage.timestamp,
+                    )
+                    appContainer.scheduler.enqueueDelivery(id)
+                    appContainer.eventRepository.addLog("Queued SMS event $id")
+                } catch (error: Exception) {
+                    val timestamp = System.currentTimeMillis()
+                    appContainer.configRepository.setFaultState(
+                        reason = "SMS enqueue failed: ${error.message ?: error::class.java.simpleName}",
+                        timestamp = timestamp,
+                    )
+                }
             }
+        } finally {
+            appContainer.scheduler.ensureHeartbeatScheduled("sms", startServiceIfOverdue = true)
         }
     }
 

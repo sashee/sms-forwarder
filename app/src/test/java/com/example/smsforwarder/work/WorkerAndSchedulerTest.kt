@@ -5,7 +5,6 @@ import android.app.Application
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -190,11 +189,11 @@ class WorkerAndSchedulerTest {
         assertNotNull(container.configRepository.getHeartbeatLastAttemptAt())
         assertEquals(null, container.configRepository.getHeartbeatLastSuccessAt())
         assertTrue(container.scheduler.enqueuedDeliveries.isEmpty())
-        assertTrue(
-            container.eventRepository.observeLogs().first().first().text.startsWith("Heartbeat failed (now=") &&
-                container.eventRepository.observeLogs().first().first().text.contains("+") &&
-                container.eventRepository.observeLogs().first().first().text.contains("network down"),
-        )
+        assertTrue(container.eventRepository.observeLogs().first().any {
+            it.text.startsWith("Heartbeat failed (now=") &&
+                it.text.contains("+") &&
+                it.text.contains("network down")
+        })
     }
 
     @Test
@@ -378,12 +377,11 @@ class WorkerAndSchedulerTest {
 
     @Test
     @Suppress("DEPRECATION")
-    fun eventSchedulerStartsHeartbeatServiceSchedulesAlarmAndEnqueuesDeliveryWork() = runBlockingTest {
+    fun eventSchedulerStartsImmediateHeartbeatWhenOverdueAndEnqueuesDeliveryWork() = runBlockingTest {
         val context = ApplicationProvider.getApplicationContext<TestSmsForwarderApp>()
         val database = testAppContainer().database
         val workManager = WorkManager.getInstance(context)
         val scheduler = EventScheduler(context, workManager, database.queueDao())
-        val alarmManager = context.getSystemService(AlarmManager::class.java)
 
         scheduler.ensureRecurringWork()
         scheduler.enqueueDelivery(10L, 1234L)
@@ -394,13 +392,9 @@ class WorkerAndSchedulerTest {
 
         val startedService = shadowOf(context as Application).nextStartedService
         assertEquals(HeartbeatForegroundService::class.java.name, startedService.component!!.className)
-
-        val scheduledAlarm = requireNotNull(shadowOf(alarmManager).nextScheduledAlarm)
-        assertTrue(scheduledAlarm.triggerAtTime >= System.currentTimeMillis() + HeartbeatRunner.INTERVAL_MILLIS - 5_000L)
-        assertTrue(testAppContainer().configRepository.getHeartbeatAlarmScheduledAt() != null)
         assertTrue(
             testAppContainer().eventRepository.observeLogs().first().any {
-                it.text.startsWith("Heartbeat recovery alarm scheduled for ") && it.text.contains("+")
+                it.text.startsWith("Heartbeat immediate execution requested via scheduler")
             },
         )
 
@@ -417,6 +411,29 @@ class WorkerAndSchedulerTest {
             assertTrue(cursor.moveToFirst())
             assertEquals(NetworkType.CONNECTED.ordinal, cursor.getInt(0))
         }
+    }
+
+    @Test
+    @Suppress("DEPRECATION")
+    fun eventSchedulerSchedulesAlarmWithoutImmediateStartWhenHeartbeatNotDue() = runBlockingTest {
+        val context = ApplicationProvider.getApplicationContext<TestSmsForwarderApp>()
+        val database = testAppContainer().database
+        val workManager = WorkManager.getInstance(context)
+        val scheduler = EventScheduler(context, workManager, database.queueDao())
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        testAppContainer().configRepository.setHeartbeatLastAttemptAt(System.currentTimeMillis())
+
+        scheduler.ensureRecurringWork()
+
+        val scheduledAlarm = requireNotNull(shadowOf(alarmManager).nextScheduledAlarm)
+        assertTrue(scheduledAlarm.triggerAtTime >= System.currentTimeMillis() + HeartbeatRunner.INTERVAL_MILLIS - 5_000L)
+        assertTrue(testAppContainer().configRepository.getHeartbeatAlarmScheduledAt() != null)
+        assertEquals(null, shadowOf(context as Application).nextStartedService)
+        assertTrue(
+            testAppContainer().eventRepository.observeLogs().first().any {
+                it.text.startsWith("Heartbeat recovery alarm scheduled for ") && it.text.contains("+")
+            },
+        )
     }
 
     @Test
@@ -447,27 +464,14 @@ class WorkerAndSchedulerTest {
     }
 
     @Test
-    fun eventSchedulerCancelsLegacyHeartbeatWorkerWorkWhenEnsured() = runBlockingTest {
-        val context = ApplicationProvider.getApplicationContext<TestSmsForwarderApp>()
-        val database = testAppContainer().database
-        val workManager = WorkManager.getInstance(context)
-        val scheduler = EventScheduler(context, workManager, database.queueDao())
-        val legacyRequest = OneTimeWorkRequestBuilder<HeartbeatWorker>()
-            .addTag(HeartbeatWorker::class.java.name)
-            .build()
+    fun ensureRecurringWorkCancelsLegacyHeartbeatWorkerViaSchedulerPath() = runBlockingTest {
+        val container = testAppContainer()
 
-        workManager.enqueue(legacyRequest).result.get()
-        waitFor {
-            workManager.getWorkInfosByTag(HeartbeatWorker::class.java.name).get().any { it.id == legacyRequest.id }
-        }
+        container.scheduler.ensureRecurringWork()
 
-        scheduler.ensureRecurringWork()
-
-        waitFor {
-            workManager.getWorkInfosByTag(HeartbeatWorker::class.java.name).get()
-                .filter { it.id == legacyRequest.id }
-                .all { it.state == WorkInfo.State.CANCELLED }
-        }
+        assertEquals(1, container.scheduler.heartbeatScheduledCount)
+        assertEquals(1, container.scheduler.legacyHeartbeatCleanupCount)
+        assertEquals(1, container.scheduler.heartbeatRepairCount)
     }
 
     @Test
@@ -514,21 +518,29 @@ class WorkerAndSchedulerTest {
             service.onStartCommand(HeartbeatForegroundService.createStartIntent(service, "test"), 0, 1)
 
             waitFor { container.sender.requests.size == 1 }
-            waitFor { container.scheduler.heartbeatAlarmTimes.size >= 2 }
+            waitFor { container.scheduler.heartbeatAlarmTimes.isNotEmpty() }
+            waitFor {
+                runBlocking {
+                    container.eventRepository.observeLogs().first().any {
+                        it.text == "Heartbeat execution starting via test"
+                    }
+                }
+            }
             assertNotNull(container.configRepository.getHeartbeatServiceSeenAt())
             assertNotNull(container.configRepository.getHeartbeatAlarmScheduledAt())
             assertEquals(1, container.sender.requests.size)
-            assertTrue(container.scheduler.heartbeatAlarmTimes.size >= 2)
+            assertTrue(container.scheduler.heartbeatAlarmTimes.isNotEmpty())
             val logs = container.eventRepository.observeLogs().first().map { it.text }
-            assertTrue(logs.any { it.contains("Heartbeat service start requested via test") })
-            assertTrue(logs.any { it.startsWith("Heartbeat loop iteration (") && it.contains("nextDueAt=") && it.contains("+") })
-            assertTrue(logs.any { it.startsWith("Heartbeat loop finished slot; nextDueAt=") && it.contains("+") })
+            assertTrue(logs.any { it.contains("Heartbeat service start requested via test") && it.contains("executionActive=false") })
+            assertTrue(logs.any { it == "Heartbeat execution starting via test" })
+            assertTrue(logs.any { it.startsWith("Heartbeat completed with HTTP 200") })
+            assertTrue(logs.any { it.startsWith("Heartbeat execution finished via test; nextDueAt=") && it.contains("+") })
             serviceController.destroy()
         }
     }
 
     @Test
-    fun heartbeatForegroundServiceWaitsForNextDueTimeWhenRecentlyAttempted() {
+    fun heartbeatForegroundServiceSkipsSendAndRearmsNextAlarmWhenRecentlyAttempted() {
         runBlocking {
             TestEnvironment.reset()
             installTestContainer { context -> TestAppContainer(context) }
@@ -548,7 +560,7 @@ class WorkerAndSchedulerTest {
             assertTrue(container.scheduler.heartbeatAlarmTimes.last() >= lastAttemptAt + HeartbeatRunner.INTERVAL_MILLIS - 5_000L)
             assertTrue(
                 container.eventRepository.observeLogs().first().any {
-                    it.text.startsWith("Heartbeat loop delaying for ")
+                    it.text.startsWith("Heartbeat skipped because next slot is not due yet")
                 },
             )
             serviceController.destroy()
@@ -556,7 +568,7 @@ class WorkerAndSchedulerTest {
     }
 
     @Test
-    fun heartbeatForegroundServiceRepairsMissingAlarmState() {
+    fun heartbeatForegroundServiceRepairsMissingAlarmStateAfterOneShotExecution() {
         runBlocking {
             TestEnvironment.reset()
             installTestContainer { context -> TestAppContainer(context) }
@@ -569,16 +581,53 @@ class WorkerAndSchedulerTest {
             service.onStartCommand(HeartbeatForegroundService.createStartIntent(service, "repair"), 0, 1)
 
             waitFor { container.scheduler.heartbeatAlarmTimes.isNotEmpty() }
-            waitFor { runBlocking { container.eventRepository.observeLogs().first().any { it.text.contains("Heartbeat recovery alarm repaired") } } }
+            waitFor {
+                runBlocking {
+                    container.eventRepository.observeLogs().first().any {
+                        it.text.startsWith("Heartbeat alarm repair requested via service:repair (missing)")
+                    }
+                }
+            }
             assertNotNull(container.configRepository.getHeartbeatAlarmScheduledAt())
             assertTrue(
                 container.eventRepository.observeLogs().first().any {
-                    it.text.startsWith("Heartbeat recovery alarm repaired (missing)") &&
+                    it.text.startsWith("Heartbeat alarm repair requested via service:repair (missing)") &&
                         it.text.contains("scheduledAt=none") &&
-                        it.text.contains("expectedTriggerAt=") &&
+                        it.text.contains("nextDueAt=") &&
                         it.text.contains("+")
                 },
             )
+            serviceController.destroy()
+        }
+    }
+
+    @Test
+    fun heartbeatForegroundServiceIgnoresConcurrentExecutionStartRequest() {
+        runBlocking {
+            TestEnvironment.reset()
+            installTestContainer { context -> TestAppContainer(context) }
+            val container = testAppContainer()
+            container.configRepository.saveConfig(AppConfig(heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb")))
+            val serviceController = Robolectric.buildService(HeartbeatForegroundService::class.java).create()
+            val service = serviceController.get()
+
+            val activeJob = kotlinx.coroutines.Job()
+            service.javaClass.getDeclaredField("executionJob").apply {
+                isAccessible = true
+            }.set(service, activeJob)
+
+            service.onStartCommand(HeartbeatForegroundService.createStartIntent(service, "alarm"), 0, 2)
+
+            waitFor {
+                runBlocking {
+                    container.eventRepository.observeLogs().first().any {
+                        it.text.contains("Heartbeat service start requested via alarm") && it.text.contains("executionActive=true")
+                    }
+                }
+            }
+            assertTrue(container.sender.requests.isEmpty())
+            assertTrue(container.eventRepository.observeLogs().first().any { it.text == "Heartbeat execution already active; start request via alarm did not restart it" })
+            activeJob.cancel()
             serviceController.destroy()
         }
     }

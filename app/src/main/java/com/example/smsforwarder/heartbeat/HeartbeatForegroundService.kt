@@ -13,17 +13,17 @@ import com.example.smsforwarder.R
 import com.example.smsforwarder.SmsForwarderApp
 import com.example.smsforwarder.util.TimeFormatter
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class HeartbeatForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val appContainer by lazy { (applicationContext as SmsForwarderApp).appContainer }
-    private var loopStarted = false
+    @Volatile
+    private var executionJob: kotlinx.coroutines.Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -33,82 +33,65 @@ class HeartbeatForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val reason = intent?.getStringExtra(EXTRA_START_REASON).orEmpty().ifBlank { "scheduler" }
-        val wasLoopStarted = loopStarted
+        val isExecutionActive = executionJob?.isActive == true
         serviceScope.launch {
             val now = System.currentTimeMillis()
             appContainer.configRepository.setHeartbeatServiceSeenAt(now)
             appContainer.eventRepository.addLog(
-                "Heartbeat service start requested via $reason (startId=$startId, loopStarted=$wasLoopStarted, now=${TimeFormatter.toDebugLocal(now)})",
+                "Heartbeat service start requested via $reason (startId=$startId, executionActive=$isExecutionActive, now=${TimeFormatter.toDebugLocal(now)})",
             )
         }
-        if (!loopStarted) {
-            loopStarted = true
+        if (!isExecutionActive) {
+            startExecution(reason, startId)
+        } else {
             serviceScope.launch {
-                runLoop()
+                appContainer.eventRepository.addLog(
+                    "Heartbeat execution already active; start request via $reason did not restart it",
+                )
             }
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
+        executionJob = null
         serviceScope.cancel()
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private suspend fun runLoop() {
-        while (serviceScope.isActive) {
-            val now = System.currentTimeMillis()
-            appContainer.configRepository.setHeartbeatServiceSeenAt(now)
-            val nextDueAt = HeartbeatRunner.nextDueAt(appContainer, now)
-            appContainer.eventRepository.addLog(
-                "Heartbeat loop iteration (now=${TimeFormatter.toDebugLocal(now)}, nextDueAt=${TimeFormatter.toDebugLocal(nextDueAt)}, delayMillis=${(nextDueAt - now).coerceAtLeast(0)})",
-            )
-            ensureRecoveryAlarm(nextDueAt)
-            val delayMillis = (nextDueAt - now).coerceAtLeast(0)
-            if (delayMillis > 0) {
-                appContainer.eventRepository.addLog("Heartbeat loop delaying for $delayMillis ms")
-                delay(delayMillis)
+    private fun startExecution(reason: String, startId: Int) {
+        var startedJob: kotlinx.coroutines.Job? = null
+        val job = serviceScope.launch {
+            appContainer.eventRepository.addLog("Heartbeat execution starting via $reason")
+            try {
+                val now = System.currentTimeMillis()
+                appContainer.configRepository.setHeartbeatServiceSeenAt(now)
+                HeartbeatRunner.runHeartbeatSlot(appContainer, now)
+                val nextDueAt = HeartbeatRunner.nextDueAt(appContainer, System.currentTimeMillis())
                 appContainer.eventRepository.addLog(
-                    "Heartbeat loop woke after $delayMillis ms delay at ${TimeFormatter.toDebugLocal(System.currentTimeMillis())}",
+                    "Heartbeat execution finished via $reason; nextDueAt=${TimeFormatter.toDebugLocal(nextDueAt)}",
                 )
+                appContainer.scheduler.ensureHeartbeatScheduled("service:$reason", startServiceIfOverdue = false)
+            } catch (error: CancellationException) {
+                appContainer.eventRepository.addLog("Heartbeat execution cancelled")
+                throw error
+            } catch (error: Exception) {
+                appContainer.eventRepository.addLog(
+                    "Heartbeat execution failed: ${error.message ?: error::class.java.simpleName}",
+                )
+                throw error
+            } finally {
+                if (executionJob === startedJob) {
+                    executionJob = null
+                }
+                appContainer.eventRepository.addLog("Heartbeat execution no longer active")
+                stopSelfResult(startId)
             }
-            if (!serviceScope.isActive) {
-                return
-            }
-            HeartbeatRunner.runHeartbeatSlot(appContainer)
-            if (!serviceScope.isActive) {
-                return
-            }
-            val nextExpectedTriggerAt = HeartbeatRunner.nextDueAt(appContainer, System.currentTimeMillis())
-            appContainer.eventRepository.addLog(
-                "Heartbeat loop finished slot; nextDueAt=${TimeFormatter.toDebugLocal(nextExpectedTriggerAt)}",
-            )
-            ensureRecoveryAlarm(nextExpectedTriggerAt)
         }
-    }
-
-    private suspend fun ensureRecoveryAlarm(expectedTriggerAtMillis: Long) {
-        val scheduledAt = appContainer.configRepository.getHeartbeatAlarmScheduledAt()
-        val isMissing = scheduledAt == null
-        val isStale = scheduledAt?.let { it < expectedTriggerAtMillis } == true
-        val isTooFarAhead = scheduledAt?.let { it > expectedTriggerAtMillis + HeartbeatRunner.INTERVAL_MILLIS } == true
-        if (isMissing || isStale || isTooFarAhead) {
-            appContainer.scheduler.scheduleHeartbeatRecoveryAlarm(expectedTriggerAtMillis)
-            val state = when {
-                isMissing -> "missing"
-                isStale -> "stale"
-                else -> "misaligned"
-            }
-            appContainer.eventRepository.addLog(
-                "Heartbeat recovery alarm repaired ($state) with scheduledAt=${TimeFormatter.toDebugLocal(scheduledAt)} expectedTriggerAt=${TimeFormatter.toDebugLocal(expectedTriggerAtMillis)}",
-            )
-        } else {
-            appContainer.eventRepository.addLog(
-                "Heartbeat recovery alarm already aligned with scheduledAt=${TimeFormatter.toDebugLocal(scheduledAt)} expectedTriggerAt=${TimeFormatter.toDebugLocal(expectedTriggerAtMillis)}",
-            )
-        }
+        startedJob = job
+        executionJob = job
     }
 
     private fun ensureNotificationChannel() {

@@ -74,6 +74,7 @@ class ReceiverAndServiceTest {
 
         assertEquals(2, container.eventRepository.allQueuedEvents().size)
         assertEquals(2, container.scheduler.enqueuedDeliveries.size)
+        assertEquals(1, container.scheduler.heartbeatRepairCount)
         val logs = container.eventRepository.observeLogs().first().map { it.text }
         assertTrue(logs.contains("Queued SMS event 1"))
         assertTrue(logs.contains("Queued SMS event 2"))
@@ -107,7 +108,9 @@ class ReceiverAndServiceTest {
         receiver.onReceive(ApplicationProvider.getApplicationContext(), intent)
 
         waitFor { runBlocking { container.eventRepository.allQueuedEvents().size == 1 } }
+        waitFor { container.scheduler.heartbeatRepairCount == 1 }
         assertEquals(1, container.scheduler.enqueuedDeliveries.size)
+        assertEquals(1, container.scheduler.heartbeatRepairCount)
     }
 
     @Test
@@ -133,6 +136,7 @@ class ReceiverAndServiceTest {
 
         assertTrue(container.configRepository.getFaultState()!!.reason.contains("SMS enqueue failed"))
         assertEquals(originalConfig, container.configRepository.getConfig())
+        assertEquals(1, container.scheduler.heartbeatRepairCount)
     }
 
     @Test
@@ -157,6 +161,7 @@ class ReceiverAndServiceTest {
         waitFor { container.scheduler.heartbeatScheduledCount == 1 }
         waitFor { container.scheduler.rescheduleInvocations == 1 }
         waitFor { runBlocking { container.eventRepository.observeLogs().first().isNotEmpty() } }
+        assertEquals(1, container.scheduler.heartbeatRepairCount)
         assertEquals("Boot completed; rescheduling work", container.eventRepository.observeLogs().first().first().text)
     }
 
@@ -169,6 +174,7 @@ class ReceiverAndServiceTest {
         waitFor { container.scheduler.heartbeatScheduledCount == 1 }
         waitFor { container.scheduler.rescheduleInvocations == 1 }
         waitFor { runBlocking { container.eventRepository.observeLogs().first().isNotEmpty() } }
+        assertEquals(1, container.scheduler.heartbeatRepairCount)
         assertEquals("Boot completed; rescheduling work", container.eventRepository.observeLogs().first().first().text)
     }
 
@@ -203,6 +209,7 @@ class ReceiverAndServiceTest {
         assertEquals(123L, container.configRepository.getCallScreeningSeenAt())
         assertEquals(1, container.eventRepository.allQueuedEvents().size)
         assertEquals(1, container.scheduler.enqueuedDeliveries.size)
+        assertEquals(1, container.scheduler.heartbeatRepairCount)
         assertEquals("Queued call event 1 via screening", container.eventRepository.observeLogs().first().last().text)
     }
 
@@ -217,6 +224,7 @@ class ReceiverAndServiceTest {
 
         assertEquals(2, container.eventRepository.allQueuedEvents().size)
         assertEquals(2, container.scheduler.enqueuedDeliveries.size)
+        assertEquals(2, container.scheduler.heartbeatRepairCount)
     }
 
     @Test

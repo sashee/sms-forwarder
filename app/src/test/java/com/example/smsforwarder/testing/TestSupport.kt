@@ -52,6 +52,7 @@ open class RecordingScheduler(context: Context, queueDao: com.example.smsforward
     EventScheduler(context, WorkManager.getInstance(context), queueDao) {
     var heartbeatScheduledCount: Int = 0
     var legacyHeartbeatCleanupCount: Int = 0
+    var heartbeatRepairCount: Int = 0
     var heartbeatServiceStartCount: Int = 0
     val heartbeatAlarmTimes: MutableList<Long> = CopyOnWriteArrayList()
     val enqueuedDeliveries: MutableList<Pair<Long, Long>> = CopyOnWriteArrayList()
@@ -59,7 +60,7 @@ open class RecordingScheduler(context: Context, queueDao: com.example.smsforward
 
     override fun ensureRecurringWork() {
         heartbeatScheduledCount += 1
-        cancelLegacyHeartbeatWork()
+        super.ensureRecurringWork()
     }
 
     override fun cancelLegacyHeartbeatWork() {
@@ -68,6 +69,11 @@ open class RecordingScheduler(context: Context, queueDao: com.example.smsforward
 
     override fun startHeartbeatService(reason: String) {
         heartbeatServiceStartCount += 1
+    }
+
+    override fun ensureHeartbeatScheduled(reason: String, startServiceIfOverdue: Boolean) {
+        heartbeatRepairCount += 1
+        super.ensureHeartbeatScheduled(reason, startServiceIfOverdue)
     }
 
     override fun scheduleHeartbeatRecoveryAlarm(triggerAtMillis: Long) {

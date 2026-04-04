@@ -72,6 +72,9 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refreshStatus()
+        lifecycleScope.launch {
+            appContainer.scheduler.ensureHeartbeatScheduled("activity", startServiceIfOverdue = true)
+        }
     }
 
     private fun refreshStatus() {

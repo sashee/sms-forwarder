@@ -227,6 +227,8 @@ Tests:
 - schedules a heartbeat recovery alarm for the next due time
 - cancels legacy `HeartbeatWorker` work tagged for older heartbeat scheduling before arming the current heartbeat path
 - logs the exact recovery-alarm trigger time when scheduling heartbeat recovery
+- repairs missing/stale heartbeat alarms from shared scheduler logic
+- starts immediate heartbeat execution when a wake path finds heartbeat already overdue
 
 ### HeartbeatForegroundService
 
@@ -237,11 +239,10 @@ Tests:
 - starts in the foreground with a persistent notification
 - records foreground-service-seen timestamp
 - sends heartbeat immediately when overdue or never attempted
-- waits for the next due time when the last attempt is recent
-- schedules the next recovery alarm each loop iteration
+- does not keep an in-process delay loop alive between heartbeats
+- rearms the next recovery alarm after each one-shot execution
 - keeps using single-attempt heartbeat semantics via shared heartbeat execution logic
-- logs service start reason, loop state, next due time, and delay before sleeping
-- logs whether the recovery alarm was already aligned or repaired
+- logs service start reason, execution state, send/skip reason, and next due time
 
 ### HeartbeatAlarmReceiver
 
@@ -253,6 +254,7 @@ Tests:
 - starts the heartbeat foreground service for the app alarm action
 - logs that the recovery alarm fired
 - logs the previously stored recovery-alarm timestamp when the alarm fires
+- leaves the next alarm to be rearmed by the one-shot heartbeat execution path
 
 ### BootReceiver
 
@@ -262,6 +264,7 @@ Additional tests:
 - schedules recurring heartbeat work on `LOCKED_BOOT_COMPLETED`
 - writes boot log only for boot actions
 - reschedules multiple queued events with the correct overdue vs future delays
+- repairs the heartbeat alarm on boot and starts immediate heartbeat execution only when already overdue
 
 ### AppWorkerFactory
 
