@@ -155,6 +155,10 @@ class WorkerAndSchedulerTest {
         worker.doWork()
 
         assertEquals(1, container.sender.requests.size)
+        assertEquals("http://heartbeat", container.sender.requests.single().url)
+        assertEquals("POST", container.sender.requests.single().method)
+        assertEquals("text/plain", container.sender.requests.single().contentType)
+        assertEquals("hb", container.sender.requests.single().body)
         assertNotNull(container.configRepository.getHeartbeatLastAttemptAt())
         assertNotNull(container.configRepository.getHeartbeatLastSuccessAt())
         assertEquals("Heartbeat completed with HTTP 200", container.eventRepository.observeLogs().first().first().text)
@@ -254,6 +258,70 @@ class WorkerAndSchedulerTest {
     }
 
     @Test
+    fun heartbeatWorkerTrimsAgainOnFirstRunOfNewUtcDay() = runBlocking {
+        val container = testAppContainer()
+        val firstTrimAt = Instant.parse("2026-04-04T23:59:00Z").toEpochMilli()
+        val now = Instant.parse("2026-04-05T00:01:00Z").toEpochMilli()
+        val cutoff = Instant.ofEpochMilli(now)
+            .atZone(ZoneOffset.UTC)
+            .minusMonths(6)
+            .toInstant()
+            .toEpochMilli()
+        container.configRepository.setLogLastTrimAt(firstTrimAt)
+        container.eventRepository.addLog("old", cutoff - 1)
+
+        HeartbeatRunner.runHeartbeatSlot(container, now)
+
+        val logs = container.eventRepository.observeLogs(10).first().map { it.text }
+        assertTrue("old" !in logs)
+        assertEquals(now, container.configRepository.getLogLastTrimAt())
+    }
+
+    @Test
+    fun heartbeatWorkerStillTrimsLogsDuringRecentFaultState() = runBlocking {
+        val container = testAppContainer()
+        val now = Instant.parse("2026-04-04T12:00:00Z").toEpochMilli()
+        val cutoff = Instant.ofEpochMilli(now)
+            .atZone(ZoneOffset.UTC)
+            .minusMonths(6)
+            .toInstant()
+            .toEpochMilli()
+        container.eventRepository.addLog("old", cutoff - 1)
+        container.configRepository.setFaultState("db broken", now - 1_000L)
+
+        HeartbeatRunner.runHeartbeatSlot(container, now)
+
+        val logs = container.eventRepository.observeLogs(10).first().map { it.text }
+        assertTrue("old" !in logs)
+        assertTrue(logs.contains("Heartbeat skipped while fault state is active"))
+        assertEquals(now, container.configRepository.getLogLastTrimAt())
+        assertTrue(container.sender.requests.isEmpty())
+    }
+
+    @Test
+    fun persistedFaultStateIsHonoredAfterContainerRecreation() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<TestSmsForwarderApp>()
+        val originalContainer = testAppContainer()
+        val now = Instant.parse("2026-04-04T12:00:00Z").toEpochMilli()
+
+        originalContainer.configRepository.saveConfig(AppConfig(heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb")))
+        originalContainer.configRepository.setFaultState("db broken", now - 1_000L)
+
+        val recreatedContainer = TestAppContainer(context)
+
+        HeartbeatRunner.runHeartbeatSlot(recreatedContainer, now)
+
+        assertEquals("db broken", recreatedContainer.configRepository.getFaultState()?.reason)
+        assertTrue(recreatedContainer.sender.requests.isEmpty())
+        assertEquals(
+            "Heartbeat skipped while fault state is active",
+            recreatedContainer.eventRepository.observeLogs().first().first().text,
+        )
+        recreatedContainer.database.close()
+    }
+
+    @Test
+    @Suppress("DEPRECATION")
     fun eventSchedulerStartsHeartbeatServiceSchedulesAlarmAndEnqueuesDeliveryWork() = runBlockingTest {
         val context = ApplicationProvider.getApplicationContext<TestSmsForwarderApp>()
         val database = testAppContainer().database

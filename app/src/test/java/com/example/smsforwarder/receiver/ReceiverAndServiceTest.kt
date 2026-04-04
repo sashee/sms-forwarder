@@ -173,6 +173,26 @@ class ReceiverAndServiceTest {
     }
 
     @Test
+    fun bootReceiverRestoresMultipleQueuedDeliveriesWithCorrectDelays() = runBlocking {
+        val container = testAppContainer()
+        container.configRepository.saveConfig(AppConfig(sms = EventConfig("http://sms", "POST", "text/plain", "body")))
+        val overdueId = container.eventRepository.enqueueSms("+1555", "overdue", 1L)
+        val futureId = container.eventRepository.enqueueSms("+1666", "future", 2L)
+        container.eventRepository.scheduleRetry(overdueId, 1, System.currentTimeMillis() - 1_000L)
+        val futureDelay = 20_000L
+        container.eventRepository.scheduleRetry(futureId, 1, System.currentTimeMillis() + futureDelay)
+
+        BootReceiver().onReceive(ApplicationProvider.getApplicationContext(), Intent(Intent.ACTION_BOOT_COMPLETED))
+
+        waitFor { container.scheduler.rescheduleInvocations == 1 }
+        waitFor { container.scheduler.enqueuedDeliveries.size >= 2 }
+        val overdue = container.scheduler.enqueuedDeliveries.last { it.first == overdueId }
+        val future = container.scheduler.enqueuedDeliveries.last { it.first == futureId }
+        assertEquals(0L, overdue.second)
+        assertTrue(future.second in (futureDelay - 2_000L)..futureDelay)
+    }
+
+    @Test
     fun callScreeningServiceQueuesCallAndTracksStatus() = runBlocking {
         val container = testAppContainer()
         container.configRepository.saveConfig(AppConfig(call = EventConfig("http://call", "POST", "text/plain", "body")))
@@ -280,7 +300,7 @@ class ReceiverAndServiceTest {
         val receiver = CallStateReceiver()
         val intent = Intent(TelephonyManager.ACTION_PHONE_STATE_CHANGED).apply {
             putExtra(TelephonyManager.EXTRA_STATE, TelephonyManager.EXTRA_STATE_IDLE)
-            putExtra(TelephonyManager.EXTRA_INCOMING_NUMBER, "+1777")
+            putExtra(EXTRA_INCOMING_NUMBER, "+1777")
         }
 
         receiver.onReceive(ApplicationProvider.getApplicationContext(), intent)
@@ -311,7 +331,7 @@ class ReceiverAndServiceTest {
         val receiver = CallStateReceiver()
         val intent = Intent(TelephonyManager.ACTION_PHONE_STATE_CHANGED).apply {
             putExtra(TelephonyManager.EXTRA_STATE, TelephonyManager.EXTRA_STATE_RINGING)
-            putExtra(TelephonyManager.EXTRA_INCOMING_NUMBER, "+1777")
+            putExtra(EXTRA_INCOMING_NUMBER, "+1777")
         }
 
         receiver.onReceive(ApplicationProvider.getApplicationContext(), intent)
@@ -369,5 +389,9 @@ class ReceiverAndServiceTest {
             val high = chunk.getOrNull(1)?.digitToInt(16) ?: 0x0F
             output.write((high shl 4) or low)
         }
+    }
+
+    companion object {
+        private const val EXTRA_INCOMING_NUMBER = "incoming_number"
     }
 }

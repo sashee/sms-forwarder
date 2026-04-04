@@ -94,4 +94,23 @@ class ConfigRepositoryTest {
         assertNull(repository.getFaultState())
         assertEquals(config, repository.getConfig())
     }
+
+    @Test
+    fun savedStatePersistsAcrossRepositoryRecreation() = runBlocking {
+        val config = AppConfig(
+            heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb"),
+            sms = EventConfig("http://sms", "PUT", "application/json", "sms"),
+            call = EventConfig("http://call", "PATCH", "text/xml", "call"),
+        )
+
+        repository.saveConfig(config)
+        repository.setFaultState("broken", 123L)
+        repository.setLogLastTrimAt(456L)
+
+        repository = ConfigRepository(app)
+
+        assertEquals(config, repository.getConfig())
+        assertEquals(FaultState("broken", 123L), repository.getFaultState())
+        assertEquals(456L, repository.getLogLastTrimAt())
+    }
 }

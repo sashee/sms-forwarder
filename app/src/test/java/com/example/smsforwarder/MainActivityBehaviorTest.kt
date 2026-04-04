@@ -188,6 +188,27 @@ class MainActivityBehaviorTest {
     }
 
     @Test
+    fun logViewShowsOnlyLatestHundredEntries() = runBlocking {
+        val container = testAppContainer()
+        repeat(105) { index ->
+            container.eventRepository.addLog("log-$index", index.toLong())
+        }
+
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().resume().get()
+
+        waitFor {
+            shadowOf(Looper.getMainLooper()).idle()
+            val lines = activity.findViewById<TextView>(R.id.logText).text.toString().lines().filter { it.isNotBlank() }
+            lines.size == 100
+        }
+
+        val renderedLines = activity.findViewById<TextView>(R.id.logText).text.toString().lines().filter { it.isNotBlank() }
+        assertTrue(renderedLines.any { it.endsWith(": log-104") })
+        assertTrue(renderedLines.any { it.endsWith(": log-5") })
+        assertTrue(renderedLines.none { it.endsWith(": log-4") })
+    }
+
+    @Test
     fun smsPermissionButtonRequestsReceiveSmsPermission() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().resume().get()
 

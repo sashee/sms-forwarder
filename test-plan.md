@@ -205,6 +205,11 @@ Tests:
   - records log-trim timestamp
 - on later heartbeat executions in the same UTC day:
   - does not trim logs again
+- when heartbeat crosses a UTC day boundary:
+  - trimming becomes eligible again on the first run of the new day
+- when fault state is active and younger than 24 hours:
+  - daily log trimming still runs before the heartbeat send is skipped
+- same-day heartbeat runs do not update the stored log-trim timestamp
 
 ### EventScheduler
 
@@ -249,6 +254,7 @@ Additional tests:
 - schedules recurring heartbeat work on `BOOT_COMPLETED`
 - schedules recurring heartbeat work on `LOCKED_BOOT_COMPLETED`
 - writes boot log only for boot actions
+- reschedules multiple queued events with the correct overdue vs future delays
 
 ### AppWorkerFactory
 
@@ -288,6 +294,7 @@ Tests:
 - works for `BOOT_COMPLETED`
 - works for `LOCKED_BOOT_COMPLETED`
 - re-arms the heartbeat service/alarm hybrid path via scheduler startup
+- restores multiple queued deliveries with the correct relative delays
 
 ### ForwardingCallScreeningService
 
@@ -325,6 +332,7 @@ Tests:
 - clear logs button exists
 - config fields are populated from saved preferences on launch
 - log text updates when log entries exist
+- log view shows only the latest 100 entries when more logs exist
 
 ### MainActivity Save Behavior
 
@@ -346,6 +354,8 @@ Tests:
 - battery status shows `OK` when exemption granted
 - call-screening status shows `NOK` when no recent seen timestamp exists
 - call-screening status shows `OK` when recent seen timestamp exists
+- telephony fallback status shows `NOK` when no recent seen timestamp exists
+- telephony fallback status shows `OK` when recent seen timestamp exists
 
 ### MainActivity Button Actions
 
@@ -381,6 +391,7 @@ Tests:
 - fails the request after all configured DoH providers fail
 - bypasses DoH for literal IP request hosts
 - supports both IPv4 and IPv6 bootstrap/resolved addresses in resolver configuration
+- heartbeat delivery uses the shared HTTP client wiring for outbound requests
 
 ## 7. Manifest And Resource Configuration Tests
 
@@ -408,6 +419,9 @@ Tests:
 - heartbeat during active fault state skips send
 - heartbeat after 24-hour fault age resets DB
 - DB reset preserves DataStore configuration
+- fault state persists across app/container recreation and is still honored by heartbeat
+- saved event configuration persists across app/container recreation
+- saved log-trim timestamp persists across app/container recreation
 
 ## 9. Current Coverage vs Missing Coverage
 
@@ -422,6 +436,7 @@ High-priority tests to add next:
 3. Main activity save-flow assertions for the saved log and recurring work reschedule
 4. Scheduler assertions for network constraints and 30-minute heartbeat cadence
 5. Remaining small unit/DAO coverage gaps (`observeLatest(limit)`, `deleteAll`, retry-delay cap persistence)
+6. Process-recreation persistence coverage for fault state, saved config, and log-trim timestamp
 
 ## 10. Notes
 

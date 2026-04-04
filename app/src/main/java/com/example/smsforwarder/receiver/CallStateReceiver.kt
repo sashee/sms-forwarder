@@ -20,7 +20,7 @@ class CallStateReceiver : BroadcastReceiver() {
 
         val timestamp = System.currentTimeMillis()
         val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE).orEmpty()
-        val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER).orEmpty()
+        val number = intent.getStringExtra(EXTRA_INCOMING_NUMBER).orEmpty()
         val extrasDump = extrasToLog(intent.extras)
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
@@ -47,8 +47,13 @@ class CallStateReceiver : BroadcastReceiver() {
         if (extras == null || extras.isEmpty) {
             return "{}"
         }
+        @Suppress("DEPRECATION")
         return extras.keySet()
             .sorted()
             .joinToString(prefix = "{", postfix = "}") { key -> "$key=${extras.get(key)}" }
+    }
+
+    companion object {
+        private const val EXTRA_INCOMING_NUMBER = "incoming_number"
     }
 }

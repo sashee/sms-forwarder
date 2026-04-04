@@ -92,7 +92,6 @@ open class TestAppContainer(
     }
 
     override val configRepository: ConfigRepository by lazy {
-        clearDataStore(appContext)
         ConfigRepository(appContext)
     }
 
