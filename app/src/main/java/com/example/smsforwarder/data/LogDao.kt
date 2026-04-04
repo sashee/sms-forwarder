@@ -15,4 +15,7 @@ interface LogDao {
 
     @Query("DELETE FROM logs")
     suspend fun deleteAll()
+
+    @Query("DELETE FROM logs WHERE timestamp < :cutoffTimestamp")
+    suspend fun deleteOlderThan(cutoffTimestamp: Long)
 }

@@ -109,6 +109,10 @@ class ConfigRepository(private val context: Context) {
         preferences[longPreferencesKey("heartbeat.alarm_scheduled_at")]
     }
 
+    val logLastTrimAtFlow: Flow<Long?> = context.dataStore.data.map { preferences ->
+        preferences[longPreferencesKey("logs.last_trim_at")]
+    }
+
     suspend fun setHeartbeatLastAttemptAt(timestamp: Long) {
         context.dataStore.edit { preferences ->
             preferences[longPreferencesKey("heartbeat.last_attempt_at")] = timestamp
@@ -164,6 +168,20 @@ class ConfigRepository(private val context: Context) {
     }
 
     suspend fun getHeartbeatAlarmScheduledAt(): Long? = heartbeatAlarmScheduledAtFlow.firstValue()
+
+    suspend fun setLogLastTrimAt(timestamp: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[longPreferencesKey("logs.last_trim_at")] = timestamp
+        }
+    }
+
+    suspend fun clearLogLastTrimAt() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(longPreferencesKey("logs.last_trim_at"))
+        }
+    }
+
+    suspend fun getLogLastTrimAt(): Long? = logLastTrimAtFlow.firstValue()
 
     private fun Preferences.toEventConfig(prefix: String): EventConfig = EventConfig(
         url = this[stringPreferencesKey("$prefix.url")] ?: "",

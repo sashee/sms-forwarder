@@ -38,6 +38,7 @@ class ConfigRepositoryTest {
             repository.clearHeartbeatLastSuccessAt()
             repository.clearHeartbeatServiceSeenAt()
             repository.clearHeartbeatAlarmScheduledAt()
+            repository.clearLogLastTrimAt()
         }
     }
 
@@ -57,6 +58,7 @@ class ConfigRepositoryTest {
         assertNull(repository.getHeartbeatLastSuccessAt())
         assertNull(repository.getHeartbeatServiceSeenAt())
         assertNull(repository.getHeartbeatAlarmScheduledAt())
+        assertNull(repository.getLogLastTrimAt())
     }
 
     @Test
@@ -75,6 +77,7 @@ class ConfigRepositoryTest {
         repository.setHeartbeatLastSuccessAt(987L)
         repository.setHeartbeatServiceSeenAt(159L)
         repository.setHeartbeatAlarmScheduledAt(753L)
+        repository.setLogLastTrimAt(852L)
 
         assertEquals(config, repository.getConfig())
         assertEquals(FaultState("broken", 123L), repository.getFaultState())
@@ -84,6 +87,7 @@ class ConfigRepositoryTest {
         assertEquals(987L, repository.getHeartbeatLastSuccessAt())
         assertEquals(159L, repository.getHeartbeatServiceSeenAt())
         assertEquals(753L, repository.getHeartbeatAlarmScheduledAt())
+        assertEquals(852L, repository.getLogLastTrimAt())
 
         repository.clearFaultState()
 

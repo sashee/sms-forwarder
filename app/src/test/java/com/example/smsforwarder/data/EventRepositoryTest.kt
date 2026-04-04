@@ -106,6 +106,18 @@ class EventRepositoryTest {
     }
 
     @Test
+    fun deleteLogsOlderThanRemovesOnlyOlderRows() = runBlocking {
+        repository.addLog("old", 100L)
+        repository.addLog("new", 200L)
+
+        repository.deleteLogsOlderThan(150L)
+
+        val logs = repository.observeLogs(10).first()
+        assertEquals(1, logs.size)
+        assertEquals("new", logs.first().text)
+    }
+
+    @Test
     fun heartbeatConfigComesFromPreferences() = runBlocking {
         assertEquals("http://heartbeat", repository.heartbeatConfig().url)
     }

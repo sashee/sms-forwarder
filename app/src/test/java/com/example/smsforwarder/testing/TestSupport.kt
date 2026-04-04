@@ -139,6 +139,7 @@ fun installTestContainer(factory: (Context) -> AppContainer = { TestAppContainer
                 container.configRepository.clearHeartbeatLastSuccessAt()
                 container.configRepository.clearHeartbeatServiceSeenAt()
                 container.configRepository.clearHeartbeatAlarmScheduledAt()
+                container.configRepository.clearLogLastTrimAt()
             }
         }
     }

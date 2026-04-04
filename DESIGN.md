@@ -1,6 +1,6 @@
 # Android App Design
 
-Last updated: 2026-04-03
+Last updated: 2026-04-04
 
 ## Requirements
 - Target device is fixed: Android 9 (API 28).
@@ -9,6 +9,7 @@ Last updated: 2026-04-03
 - Send a heartbeat HTTP request every 30 minutes.
 - Continue working after phone restart.
 - UI is minimal: basic configuration and basic logs.
+- Logs are retained for 6 months and trimmed automatically during the first heartbeat execution of each UTC day.
 - Build with Nix; `nix-build` should produce an installable APK.
 - Run automated tests as part of the build.
 
@@ -55,6 +56,11 @@ Special values:
 - Both `http` and `https` endpoints are allowed.
 - Because the target device is Android 9 (API 28), the app must explicitly opt in to cleartext traffic so configured `http` endpoints work.
 - For `https`, the app must use an app-bundled CA store derived from `nixpkgs` `cacert` and must not rely on the device system CA store.
+- Hostname resolution for outbound webhook and heartbeat requests must use DNS-over-HTTPS instead of the device resolver when the request URL host is a hostname rather than a literal IP.
+- The app ships a fixed DoH provider list in fallback order: Cloudflare, Google, then Quad9.
+- Each DoH provider configuration includes both IPv4 and IPv6 bootstrap IP addresses so the app can reach the DoH endpoint without depending on system DNS.
+- If one DoH provider fails, the app logs that failure and tries the next configured provider before failing the outbound request.
+- Literal IPv4/IPv6 request hosts bypass DoH lookup and connect directly.
 - No additional/custom HTTP headers are supported.
 - No in-app body validation or method/body constraint validation.
 - Any HTTP `2xx` response is success.
@@ -67,6 +73,7 @@ Special values:
   - after reaching 1 day delay, continue retries indefinitely at 24-hour intervals
 - Heartbeat delivery has no retry: if send fails, log and wait for the next 30-minute slot.
 - Heartbeat timing is still best-effort because Android/Huawei background behavior is not fully controllable, but the implementation should favor reliability using a permanent foreground notification plus `AlarmManager` recovery.
+- Log retention cleanup runs from the heartbeat path at most once per UTC day and deletes log rows older than 6 months.
 
 Catastrophic fault mode:
 - Trigger condition: only when SMS/call handler cannot enqueue an event in DB.
@@ -185,3 +192,5 @@ Catastrophic fault mode:
 | D-077 | 2026-04-03 | Because Android 9 disables cleartext traffic by default for apps targeting API 28+, the app must explicitly opt in so configured `http` endpoints are supported. |
 | D-078 | 2026-04-03 | For `https`, the app must trust only an app-bundled CA set derived from `nixpkgs` `cacert` and must not rely on the device system CA store. |
 | D-079 | 2026-04-04 | Heartbeat reliability is a priority: use a permanent foreground service as the primary 30-minute heartbeat driver, with `AlarmManager` as a recovery path if the service is killed; cadence remains best-effort rather than exact. |
+| D-080 | 2026-04-04 | Outbound hostname resolution uses DoH with fixed provider fallback order `Cloudflare -> Google -> Quad9`, with both IPv4 and IPv6 bootstrap addresses per provider and app-log entries when a DoH provider fails. |
+| D-081 | 2026-04-04 | Logs are retained for 6 months and trimmed automatically during the first heartbeat execution of each UTC day. |

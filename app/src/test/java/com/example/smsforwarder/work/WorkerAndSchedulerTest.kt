@@ -35,6 +35,8 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Instant
+import java.time.ZoneOffset
 import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
@@ -209,6 +211,46 @@ class WorkerAndSchedulerTest {
         val logs = container.eventRepository.observeLogs().first()
         assertEquals(1, logs.size)
         assertTrue(logs.first().text.contains("Database reset"))
+    }
+
+    @Test
+    fun heartbeatWorkerTrimsLogsOlderThanSixMonthsOnFirstHeartbeatOfUtcDay() = runBlocking {
+        val container = testAppContainer()
+        val now = Instant.parse("2026-04-04T12:00:00Z").toEpochMilli()
+        val cutoff = Instant.ofEpochMilli(now)
+            .atZone(ZoneOffset.UTC)
+            .minusMonths(6)
+            .toInstant()
+            .toEpochMilli()
+        container.eventRepository.addLog("old", cutoff - 1)
+        container.eventRepository.addLog("keep", cutoff)
+
+        HeartbeatRunner.runHeartbeatSlot(container, now)
+
+        val logs = container.eventRepository.observeLogs(10).first().map { it.text }
+        assertTrue("old" !in logs)
+        assertTrue("keep" in logs)
+        assertEquals(now, container.configRepository.getLogLastTrimAt())
+    }
+
+    @Test
+    fun heartbeatWorkerDoesNotTrimLogsAgainLaterTheSameUtcDay() = runBlocking {
+        val container = testAppContainer()
+        val firstTrimAt = Instant.parse("2026-04-04T00:30:00Z").toEpochMilli()
+        val now = Instant.parse("2026-04-04T23:30:00Z").toEpochMilli()
+        val cutoff = Instant.ofEpochMilli(now)
+            .atZone(ZoneOffset.UTC)
+            .minusMonths(6)
+            .toInstant()
+            .toEpochMilli()
+        container.configRepository.setLogLastTrimAt(firstTrimAt)
+        container.eventRepository.addLog("old", cutoff - 1)
+
+        HeartbeatRunner.runHeartbeatSlot(container, now)
+
+        val logs = container.eventRepository.observeLogs(10).first().map { it.text }
+        assertTrue("old" in logs)
+        assertEquals(firstTrimAt, container.configRepository.getLogLastTrimAt())
     }
 
     @Test

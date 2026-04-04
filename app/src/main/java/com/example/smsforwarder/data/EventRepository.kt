@@ -35,6 +35,10 @@ open class EventRepository(
         database.logDao().deleteAll()
     }
 
+    open suspend fun deleteLogsOlderThan(cutoffTimestamp: Long) {
+        database.logDao().deleteOlderThan(cutoffTimestamp)
+    }
+
     open suspend fun getQueuedEvent(id: Long): QueuedEventEntity? = database.queueDao().getById(id)
 
     open suspend fun markDelivered(id: Long) {

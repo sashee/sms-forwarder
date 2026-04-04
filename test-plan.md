@@ -98,6 +98,7 @@ Tests:
 - heartbeat last-attempt timestamp save/load works
 - heartbeat last-success timestamp save/load works
 - heartbeat foreground-service-seen timestamp save/load works
+- log-trim timestamp save/load works
 
 ### EventRepository
 
@@ -123,6 +124,7 @@ Tests:
 - `markDelivered` removes queued event
 - `scheduleRetry` updates attempt count and next attempt time
 - `clearLogs` removes all logs
+- deleting logs older than a cutoff removes only older rows
 - `resetDatabase`:
   - clears queued events
   - clears existing logs
@@ -198,6 +200,11 @@ Tests:
   - clears fault state
   - writes reset log
   - preserves DataStore configuration
+- on the first heartbeat execution of a UTC day:
+  - trims logs older than 6 months
+  - records log-trim timestamp
+- on later heartbeat executions in the same UTC day:
+  - does not trim logs again
 
 ### EventScheduler
 
@@ -369,6 +376,11 @@ Tests:
 - supports plain `http`
 - supports `https` with app-bundled trust anchor
 - rejects `https` certificates not rooted in bundled trust anchor
+- falls back to the next DoH provider when the current one fails
+- writes a log message when a DoH provider fails
+- fails the request after all configured DoH providers fail
+- bypasses DoH for literal IP request hosts
+- supports both IPv4 and IPv6 bootstrap/resolved addresses in resolver configuration
 
 ## 7. Manifest And Resource Configuration Tests
 

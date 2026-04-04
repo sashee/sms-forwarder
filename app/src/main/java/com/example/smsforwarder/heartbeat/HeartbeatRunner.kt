@@ -2,6 +2,8 @@ package com.example.smsforwarder.heartbeat
 
 import com.example.smsforwarder.AppContainer
 import com.example.smsforwarder.net.HttpRequest
+import java.time.Instant
+import java.time.ZoneOffset
 
 object HeartbeatRunner {
     const val INTERVAL_MILLIS: Long = 30L * 60L * 1000L
@@ -14,6 +16,7 @@ object HeartbeatRunner {
 
     suspend fun runHeartbeatSlot(appContainer: AppContainer, now: Long = System.currentTimeMillis()): Boolean {
         appContainer.configRepository.setHeartbeatLastAttemptAt(now)
+        trimLogsIfNeeded(appContainer, now)
 
         val faultState = appContainer.configRepository.getFaultState()
         if (faultState != null) {
@@ -48,5 +51,32 @@ object HeartbeatRunner {
             appContainer.eventRepository.addLog("Heartbeat failed: ${error.message ?: error::class.java.simpleName}")
             false
         }
+    }
+
+    private suspend fun trimLogsIfNeeded(appContainer: AppContainer, now: Long) {
+        val lastTrimAt = appContainer.configRepository.getLogLastTrimAt()
+        if (lastTrimAt != null && utcDayStartMillis(lastTrimAt) == utcDayStartMillis(now)) {
+            return
+        }
+
+        appContainer.eventRepository.deleteLogsOlderThan(sixMonthsAgo(now))
+        appContainer.configRepository.setLogLastTrimAt(now)
+    }
+
+    private fun utcDayStartMillis(timestamp: Long): Long {
+        return Instant.ofEpochMilli(timestamp)
+            .atZone(ZoneOffset.UTC)
+            .toLocalDate()
+            .atStartOfDay(ZoneOffset.UTC)
+            .toInstant()
+            .toEpochMilli()
+    }
+
+    private fun sixMonthsAgo(now: Long): Long {
+        return Instant.ofEpochMilli(now)
+            .atZone(ZoneOffset.UTC)
+            .minusMonths(6)
+            .toInstant()
+            .toEpochMilli()
     }
 }

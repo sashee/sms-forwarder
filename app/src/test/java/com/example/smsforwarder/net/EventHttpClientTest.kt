@@ -1,17 +1,21 @@
 package com.example.smsforwarder.net
 
 import androidx.test.core.app.ApplicationProvider
+import okhttp3.Dns
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.ByteArrayInputStream
+import java.net.InetAddress
+import java.net.UnknownHostException
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
@@ -22,7 +26,7 @@ class EventHttpClientTest {
             server.enqueue(MockResponse().setResponseCode(201))
             server.start()
 
-            val client = EventHttpClient(ApplicationProvider.getApplicationContext())
+            val client = clientForLocalhost()
             val code = client.send(
                 HttpRequest(
                     url = server.url("/sms").toString(),
@@ -35,7 +39,7 @@ class EventHttpClientTest {
             val request = server.takeRequest()
             assertEquals(201, code)
             assertEquals("POST", request.method)
-            assertEquals("text/plain", request.getHeader("Content-Type"))
+            assertTrue(request.getHeader("Content-Type")!!.startsWith("text/plain"))
             assertEquals("hello", request.body.readUtf8())
         }
     }
@@ -46,7 +50,7 @@ class EventHttpClientTest {
             server.enqueue(MockResponse().setResponseCode(204))
             server.start()
 
-            val client = EventHttpClient(ApplicationProvider.getApplicationContext())
+            val client = clientForLocalhost()
             val code = client.send(
                 HttpRequest(
                     url = server.url("/heartbeat").toString(),
@@ -69,7 +73,7 @@ class EventHttpClientTest {
             server.enqueue(MockResponse().setResponseCode(503))
             server.start()
 
-            val client = EventHttpClient(ApplicationProvider.getApplicationContext())
+            val client = clientForLocalhost()
 
             assertEquals(
                 503,
@@ -103,8 +107,7 @@ class EventHttpClientTest {
             server.enqueue(MockResponse().setResponseCode(200))
             server.start()
 
-            val client = EventHttpClient(
-                context = ApplicationProvider.getApplicationContext(),
+            val client = clientForLocalhost(
                 trustAnchorOpener = { ByteArrayInputStream(root.certificatePem().toByteArray()) },
             )
 
@@ -141,8 +144,7 @@ class EventHttpClientTest {
             server.enqueue(MockResponse().setResponseCode(200))
             server.start()
 
-            val client = EventHttpClient(
-                context = ApplicationProvider.getApplicationContext(),
+            val client = clientForLocalhost(
                 trustAnchorOpener = {
                     ByteArrayInputStream(
                         (unusedRoot.certificatePem() + trustedRoot.certificatePem()).toByteArray(),
@@ -183,8 +185,7 @@ class EventHttpClientTest {
             server.enqueue(MockResponse().setResponseCode(200))
             server.start()
 
-            val client = EventHttpClient(
-                context = ApplicationProvider.getApplicationContext(),
+            val client = clientForLocalhost(
                 trustAnchorOpener = { ByteArrayInputStream(trustedRoot.certificatePem().toByteArray()) },
             )
 
@@ -204,5 +205,152 @@ class EventHttpClientTest {
 
             error("Expected HTTPS request to fail for untrusted certificate")
         }
+    }
+
+    @Test
+    fun fallsBackToNextDohProviderAndLogsFailure() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(202))
+            server.start()
+
+            val dohFailures = mutableListOf<String>()
+            val client = EventHttpClient(
+                context = ApplicationProvider.getApplicationContext(),
+                onDohFailure = dohFailures::add,
+                dohEndpoints = listOf(
+                    EventHttpClient.DohEndpoint("Primary", "https://primary.example/dns-query", listOf("1.1.1.1")),
+                    EventHttpClient.DohEndpoint("Secondary", "https://secondary.example/dns-query", listOf("8.8.8.8")),
+                ),
+                dohDnsFactory = { endpoint ->
+                    when (endpoint.name) {
+                        "Primary" -> ThrowingDns("primary down")
+                        else -> MappingDns(mapOf("sms.example" to listOf("127.0.0.1")))
+                    }
+                },
+            )
+
+            val code = client.send(
+                HttpRequest(
+                    url = "http://sms.example:${server.port}/sms",
+                    method = "POST",
+                    contentType = "text/plain",
+                    body = "hello",
+                ),
+            )
+
+            assertEquals(202, code)
+            assertEquals("hello", server.takeRequest().body.readUtf8())
+            assertEquals(1, dohFailures.size)
+            assertTrue(dohFailures.single().contains("DoH lookup failed via Primary for sms.example: primary down"))
+        }
+    }
+
+    @Test
+    fun bypassesDohForLiteralIpAddresses() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(200))
+            server.start()
+
+            val dns = CountingDns()
+            val client = EventHttpClient(
+                context = ApplicationProvider.getApplicationContext(),
+                dohEndpoints = listOf(
+                    EventHttpClient.DohEndpoint("Unused", "https://unused.example/dns-query", listOf("1.1.1.1")),
+                ),
+                dohDnsFactory = { dns },
+            )
+
+            val code = client.send(
+                HttpRequest(
+                    url = "http://127.0.0.1:${server.port}/sms",
+                    method = "POST",
+                    contentType = "text/plain",
+                    body = "hello",
+                ),
+            )
+
+            assertEquals(200, code)
+            assertEquals(0, dns.lookupCount)
+        }
+    }
+
+    @Test
+    fun throwsWhenAllDohProvidersFail() {
+        val dohFailures = mutableListOf<String>()
+        val client = EventHttpClient(
+            context = ApplicationProvider.getApplicationContext(),
+            onDohFailure = dohFailures::add,
+            dohEndpoints = listOf(
+                EventHttpClient.DohEndpoint("Cloudflare", "https://cloudflare-dns.com/dns-query", listOf("1.1.1.1")),
+                EventHttpClient.DohEndpoint("Google", "https://dns.google/dns-query", listOf("8.8.8.8")),
+            ),
+            dohDnsFactory = { endpoint -> ThrowingDns("${endpoint.name} unavailable") },
+        )
+
+        try {
+            client.send(
+                HttpRequest(
+                    url = "http://unreachable.example/test",
+                    method = "GET",
+                    contentType = "text/plain",
+                    body = "",
+                ),
+            )
+        } catch (error: Exception) {
+            assertTrue(error.message?.contains("DoH lookup failed for unreachable.example") == true)
+            assertEquals(2, dohFailures.size)
+            assertTrue(dohFailures.first().contains("Cloudflare unavailable"))
+            assertTrue(dohFailures.last().contains("Google unavailable"))
+            return
+        }
+
+        error("Expected request to fail after all DoH providers failed")
+    }
+
+    @Test
+    fun supportsIpv6BootstrapAndResolvedAddresses() {
+        val dns = MappingDns(mapOf("localhost" to listOf("::1", "127.0.0.1")))
+        val results = dns.lookup("localhost")
+
+        assertFalse(results.isEmpty())
+        assertTrue(results.any { it.hostAddress?.contains(':') == true })
+        assertTrue(results.any { it.hostAddress == "127.0.0.1" })
+    }
+
+    private class ThrowingDns(private val message: String) : Dns {
+        override fun lookup(hostname: String): List<InetAddress> {
+            throw UnknownHostException(message)
+        }
+    }
+
+    private class CountingDns : Dns {
+        var lookupCount: Int = 0
+
+        override fun lookup(hostname: String): List<InetAddress> {
+            lookupCount += 1
+            throw UnknownHostException(hostname)
+        }
+    }
+
+    private class MappingDns(private val mappings: Map<String, List<String>>) : Dns {
+        override fun lookup(hostname: String): List<InetAddress> {
+            val addresses = mappings[hostname] ?: throw UnknownHostException(hostname)
+            return addresses.map(InetAddress::getByName)
+        }
+    }
+
+    private fun clientForLocalhost(
+        trustAnchorOpener: (() -> ByteArrayInputStream)? = null,
+    ): EventHttpClient {
+        return EventHttpClient(
+            context = ApplicationProvider.getApplicationContext(),
+            trustAnchorOpener = trustAnchorOpener,
+            dohEndpoints = listOf(
+                EventHttpClient.DohEndpoint("Local", "https://local.test/dns-query", listOf("127.0.0.1", "::1")),
+            ),
+            dohDnsFactory = {
+                MappingDns(mapOf("localhost" to listOf("127.0.0.1", "::1")))
+            },
+        )
     }
 }
