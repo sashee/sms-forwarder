@@ -21,6 +21,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = TestSmsForwarderApp::class, sdk = [28])
@@ -33,6 +34,7 @@ class EventRepositoryTest {
     @Before
     fun setUp() = runBlocking {
         TestEnvironment.reset()
+        ShadowLog.clear()
         app = ApplicationProvider.getApplicationContext()
         clearDataStore(app)
         database = Room.inMemoryDatabaseBuilder(app, AppDatabase::class.java)
@@ -115,6 +117,16 @@ class EventRepositoryTest {
         val logs = repository.observeLogs(10).first()
         assertEquals(1, logs.size)
         assertEquals("new", logs.first().text)
+    }
+
+    @Test
+    fun addLogMirrorsMessageToLogcat() = runBlocking {
+        repository.addLog("mirror me", 100L)
+
+        val logItem = ShadowLog.getLogs().last()
+        assertEquals(android.util.Log.INFO, logItem.type)
+        assertEquals("SmsForwarder", logItem.tag)
+        assertEquals("mirror me", logItem.msg)
     }
 
     @Test

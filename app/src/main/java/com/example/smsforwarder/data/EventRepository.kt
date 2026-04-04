@@ -1,6 +1,7 @@
 package com.example.smsforwarder.data
 
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 import com.example.smsforwarder.model.AppConfig
@@ -13,6 +14,10 @@ open class EventRepository(
     private val database: AppDatabase,
     private val configRepository: ConfigRepository,
 ) {
+    private companion object {
+        const val LOGCAT_TAG = "SmsForwarder"
+    }
+
     open fun observeLogs(limit: Int = 100): Flow<List<LogEntryEntity>> = database.logDao().observeLatest(limit)
 
     open suspend fun enqueueSms(number: String, text: String, timestamp: Long): Long {
@@ -29,6 +34,7 @@ open class EventRepository(
 
     open suspend fun addLog(text: String, timestamp: Long = System.currentTimeMillis()) {
         database.logDao().insert(LogEntryEntity(timestamp = timestamp, text = text))
+        Log.i(LOGCAT_TAG, text)
     }
 
     open suspend fun clearLogs() {

@@ -11,6 +11,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.example.smsforwarder.R
 import com.example.smsforwarder.SmsForwarderApp
+import com.example.smsforwarder.util.TimeFormatter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,10 +33,13 @@ class HeartbeatForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val reason = intent?.getStringExtra(EXTRA_START_REASON).orEmpty().ifBlank { "scheduler" }
+        val wasLoopStarted = loopStarted
         serviceScope.launch {
             val now = System.currentTimeMillis()
             appContainer.configRepository.setHeartbeatServiceSeenAt(now)
-            appContainer.eventRepository.addLog("Heartbeat service start requested via $reason")
+            appContainer.eventRepository.addLog(
+                "Heartbeat service start requested via $reason (startId=$startId, loopStarted=$wasLoopStarted, now=${TimeFormatter.toDebugLocal(now)})",
+            )
         }
         if (!loopStarted) {
             loopStarted = true
@@ -58,10 +62,17 @@ class HeartbeatForegroundService : Service() {
             val now = System.currentTimeMillis()
             appContainer.configRepository.setHeartbeatServiceSeenAt(now)
             val nextDueAt = HeartbeatRunner.nextDueAt(appContainer, now)
+            appContainer.eventRepository.addLog(
+                "Heartbeat loop iteration (now=${TimeFormatter.toDebugLocal(now)}, nextDueAt=${TimeFormatter.toDebugLocal(nextDueAt)}, delayMillis=${(nextDueAt - now).coerceAtLeast(0)})",
+            )
             ensureRecoveryAlarm(nextDueAt)
             val delayMillis = (nextDueAt - now).coerceAtLeast(0)
             if (delayMillis > 0) {
+                appContainer.eventRepository.addLog("Heartbeat loop delaying for $delayMillis ms")
                 delay(delayMillis)
+                appContainer.eventRepository.addLog(
+                    "Heartbeat loop woke after $delayMillis ms delay at ${TimeFormatter.toDebugLocal(System.currentTimeMillis())}",
+                )
             }
             if (!serviceScope.isActive) {
                 return
@@ -70,7 +81,11 @@ class HeartbeatForegroundService : Service() {
             if (!serviceScope.isActive) {
                 return
             }
-            ensureRecoveryAlarm(HeartbeatRunner.nextDueAt(appContainer, System.currentTimeMillis()))
+            val nextExpectedTriggerAt = HeartbeatRunner.nextDueAt(appContainer, System.currentTimeMillis())
+            appContainer.eventRepository.addLog(
+                "Heartbeat loop finished slot; nextDueAt=${TimeFormatter.toDebugLocal(nextExpectedTriggerAt)}",
+            )
+            ensureRecoveryAlarm(nextExpectedTriggerAt)
         }
     }
 
@@ -86,7 +101,13 @@ class HeartbeatForegroundService : Service() {
                 isStale -> "stale"
                 else -> "misaligned"
             }
-            appContainer.eventRepository.addLog("Heartbeat recovery alarm repaired ($state) for $expectedTriggerAtMillis")
+            appContainer.eventRepository.addLog(
+                "Heartbeat recovery alarm repaired ($state) with scheduledAt=${TimeFormatter.toDebugLocal(scheduledAt)} expectedTriggerAt=${TimeFormatter.toDebugLocal(expectedTriggerAtMillis)}",
+            )
+        } else {
+            appContainer.eventRepository.addLog(
+                "Heartbeat recovery alarm already aligned with scheduledAt=${TimeFormatter.toDebugLocal(scheduledAt)} expectedTriggerAt=${TimeFormatter.toDebugLocal(expectedTriggerAtMillis)}",
+            )
         }
     }
 

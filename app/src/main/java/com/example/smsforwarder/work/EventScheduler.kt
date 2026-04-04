@@ -15,6 +15,7 @@ import com.example.smsforwarder.data.QueueDao
 import com.example.smsforwarder.heartbeat.HeartbeatAlarmReceiver
 import com.example.smsforwarder.heartbeat.HeartbeatForegroundService
 import com.example.smsforwarder.heartbeat.HeartbeatRunner
+import com.example.smsforwarder.util.TimeFormatter
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.TimeUnit
 
@@ -81,6 +82,9 @@ open class EventScheduler(
         runBlocking {
             val appContainer = (context.applicationContext as com.example.smsforwarder.SmsForwarderApp).appContainer
             appContainer.configRepository.setHeartbeatAlarmScheduledAt(triggerAtMillis)
+            appContainer.eventRepository.addLog(
+                "Heartbeat recovery alarm scheduled for ${TimeFormatter.toDebugLocal(triggerAtMillis)}",
+            )
         }
     }
 

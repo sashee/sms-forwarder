@@ -76,6 +76,7 @@ Special values:
 - Heartbeat timing is still best-effort because Android/Huawei background behavior is not fully controllable, but the implementation should favor reliability using a permanent foreground notification plus `AlarmManager` recovery.
 - The app does not arm heartbeat scheduling from generic app-process startup; recurring heartbeat setup is driven by explicit config-save, boot recovery, and the foreground-service/alarm path.
 - `ensureRecurringWork()` must cancel legacy `HeartbeatWorker` WorkManager entries left behind by older app versions before arming the current heartbeat path.
+- Heartbeat logs should explain wake reason, due-time decision, send/skip reason, and recovery-alarm scheduling/repair state to support device-side diagnosis.
 - Log retention cleanup runs from the heartbeat path at most once per UTC day and deletes log rows older than 6 months.
 
 Catastrophic fault mode:
@@ -198,3 +199,4 @@ Catastrophic fault mode:
 | D-080 | 2026-04-04 | Outbound hostname resolution uses DoH with fixed provider fallback order `Cloudflare -> Google -> Quad9`, with both IPv4 and IPv6 bootstrap addresses per provider and app-log entries when a DoH provider fails. |
 | D-081 | 2026-04-04 | Logs are retained for 6 months and trimmed automatically during the first heartbeat execution of each UTC day. |
 | D-082 | 2026-04-04 | Heartbeat HTTP sends are deduplicated by persisted last-attempt state, and recurring-heartbeat setup must cancel legacy `HeartbeatWorker` WorkManager state from older app versions. |
+| D-083 | 2026-04-04 | Heartbeat tracing logs must explain why the service woke, why a heartbeat was sent or skipped, and what recovery alarm timing was already present or newly scheduled. |

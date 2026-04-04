@@ -23,6 +23,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 object TestEnvironment {
     var containerFactory: ((Context) -> AppContainer)? = null
+    var workManagerInitialized: Boolean = false
 
     fun reset() {
         containerFactory = null
@@ -131,6 +132,12 @@ fun testAppContainer(): TestAppContainer {
 fun installTestContainer(factory: (Context) -> AppContainer = { TestAppContainer(it) }) {
     TestEnvironment.containerFactory = factory
     val context = ApplicationProvider.getApplicationContext<Application>()
+    if (!TestEnvironment.workManagerInitialized) {
+        initializeWorkManager(context)
+        TestEnvironment.workManagerInitialized = true
+    }
+    WorkManager.getInstance(context).cancelAllWork().result.get()
+    WorkManager.getInstance(context).pruneWork().result.get()
     if (context is TestSmsForwarderApp) {
         val container = factory(context)
         context.replaceAppContainerForTest(container)
@@ -148,7 +155,6 @@ fun installTestContainer(factory: (Context) -> AppContainer = { TestAppContainer
             }
         }
     }
-    initializeWorkManager(context)
 }
 
 fun clearDataStore(context: Context) {

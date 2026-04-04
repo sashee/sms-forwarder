@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.example.smsforwarder.SmsForwarderApp
+import com.example.smsforwarder.util.TimeFormatter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -18,8 +19,11 @@ class HeartbeatAlarmReceiver : BroadcastReceiver() {
         val appContainer = (context.applicationContext as SmsForwarderApp).appContainer
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                val scheduledAt = appContainer.configRepository.getHeartbeatAlarmScheduledAt()
                 appContainer.configRepository.clearHeartbeatAlarmScheduledAt()
-                appContainer.eventRepository.addLog("Heartbeat recovery alarm fired")
+                appContainer.eventRepository.addLog(
+                    "Heartbeat recovery alarm fired (previously scheduled for ${TimeFormatter.toDebugLocal(scheduledAt)})",
+                )
                 appContainer.scheduler.startHeartbeatService("alarm")
             } finally {
                 pendingResult?.finish()

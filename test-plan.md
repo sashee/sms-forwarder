@@ -226,6 +226,7 @@ Tests:
 - starts the heartbeat foreground service when recurring work is ensured
 - schedules a heartbeat recovery alarm for the next due time
 - cancels legacy `HeartbeatWorker` work tagged for older heartbeat scheduling before arming the current heartbeat path
+- logs the exact recovery-alarm trigger time when scheduling heartbeat recovery
 
 ### HeartbeatForegroundService
 
@@ -239,6 +240,8 @@ Tests:
 - waits for the next due time when the last attempt is recent
 - schedules the next recovery alarm each loop iteration
 - keeps using single-attempt heartbeat semantics via shared heartbeat execution logic
+- logs service start reason, loop state, next due time, and delay before sleeping
+- logs whether the recovery alarm was already aligned or repaired
 
 ### HeartbeatAlarmReceiver
 
@@ -249,6 +252,7 @@ Tests:
 - ignores unrelated actions
 - starts the heartbeat foreground service for the app alarm action
 - logs that the recovery alarm fired
+- logs the previously stored recovery-alarm timestamp when the alarm fires
 
 ### BootReceiver
 
