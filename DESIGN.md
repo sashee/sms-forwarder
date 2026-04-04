@@ -18,6 +18,7 @@ Last updated: 2026-04-04
 - SMS flow: receive SMS -> generate `eventId` -> enqueue event in DB queue -> worker delivers HTTP -> retry policy applies.
 - Call flow: incoming call -> generate `eventId` -> enqueue event in DB queue -> attempt call reject -> log both enqueue/reject outcomes.
 - Heartbeat flow: a persistent foreground service is the primary heartbeat driver and an `AlarmManager` recovery alarm restarts it if needed; the target cadence is every 30 minutes, best-effort, with heartbeat reliability treated as a priority over background invisibility.
+- Heartbeat send execution is deduplicated by persisted last-attempt state so overlapping triggers inside the same 30-minute interval do not send duplicate heartbeat HTTP requests.
 - Reboot flow: scheduler/receivers resume processing after reboot.
 - Multipart SMS is handled per part as separate events (no reassembly).
 - Duplicate broadcasts are allowed to produce duplicate events.
@@ -73,6 +74,8 @@ Special values:
   - after reaching 1 day delay, continue retries indefinitely at 24-hour intervals
 - Heartbeat delivery has no retry: if send fails, log and wait for the next 30-minute slot.
 - Heartbeat timing is still best-effort because Android/Huawei background behavior is not fully controllable, but the implementation should favor reliability using a permanent foreground notification plus `AlarmManager` recovery.
+- The app does not arm heartbeat scheduling from generic app-process startup; recurring heartbeat setup is driven by explicit config-save, boot recovery, and the foreground-service/alarm path.
+- `ensureRecurringWork()` must cancel legacy `HeartbeatWorker` WorkManager entries left behind by older app versions before arming the current heartbeat path.
 - Log retention cleanup runs from the heartbeat path at most once per UTC day and deletes log rows older than 6 months.
 
 Catastrophic fault mode:
@@ -194,3 +197,4 @@ Catastrophic fault mode:
 | D-079 | 2026-04-04 | Heartbeat reliability is a priority: use a permanent foreground service as the primary 30-minute heartbeat driver, with `AlarmManager` as a recovery path if the service is killed; cadence remains best-effort rather than exact. |
 | D-080 | 2026-04-04 | Outbound hostname resolution uses DoH with fixed provider fallback order `Cloudflare -> Google -> Quad9`, with both IPv4 and IPv6 bootstrap addresses per provider and app-log entries when a DoH provider fails. |
 | D-081 | 2026-04-04 | Logs are retained for 6 months and trimmed automatically during the first heartbeat execution of each UTC day. |
+| D-082 | 2026-04-04 | Heartbeat HTTP sends are deduplicated by persisted last-attempt state, and recurring-heartbeat setup must cancel legacy `HeartbeatWorker` WorkManager state from older app versions. |

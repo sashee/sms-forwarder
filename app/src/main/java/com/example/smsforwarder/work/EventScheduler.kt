@@ -28,8 +28,13 @@ open class EventScheduler(
     }
 
     open fun ensureRecurringWork() {
+        cancelLegacyHeartbeatWork()
         startHeartbeatService("scheduler")
         scheduleHeartbeatRecoveryAlarm(System.currentTimeMillis() + HeartbeatRunner.INTERVAL_MILLIS)
+    }
+
+    open fun cancelLegacyHeartbeatWork() {
+        workManager.cancelAllWorkByTag(HeartbeatWorker::class.java.name)
     }
 
     open fun enqueueDelivery(eventId: Long, delayMillis: Long = 0) {

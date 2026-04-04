@@ -119,6 +119,19 @@ class ConfigRepository(private val context: Context) {
         }
     }
 
+    suspend fun claimHeartbeatSlot(now: Long, intervalMillis: Long): Boolean {
+        var claimed = false
+        context.dataStore.edit { preferences ->
+            val lastAttemptAt = preferences[longPreferencesKey("heartbeat.last_attempt_at")]
+            val isDue = lastAttemptAt == null || now >= lastAttemptAt + intervalMillis
+            if (isDue) {
+                preferences[longPreferencesKey("heartbeat.last_attempt_at")] = now
+                claimed = true
+            }
+        }
+        return claimed
+    }
+
     suspend fun clearHeartbeatLastAttemptAt() {
         context.dataStore.edit { preferences ->
             preferences.remove(longPreferencesKey("heartbeat.last_attempt_at"))

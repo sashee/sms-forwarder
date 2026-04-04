@@ -5,6 +5,7 @@ import android.app.Application
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -178,6 +179,39 @@ class WorkerAndSchedulerTest {
         assertEquals(null, container.configRepository.getHeartbeatLastSuccessAt())
         assertTrue(container.scheduler.enqueuedDeliveries.isEmpty())
         assertEquals("Heartbeat failed: network down", container.eventRepository.observeLogs().first().first().text)
+    }
+
+    @Test
+    fun heartbeatWorkerSkipsSecondTriggerBeforeNextInterval() = runBlocking {
+        val container = testAppContainer()
+        val firstNow = Instant.parse("2026-04-04T12:00:00Z").toEpochMilli()
+        val secondNow = firstNow + 5_000L
+        container.configRepository.saveConfig(AppConfig(heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb")))
+
+        assertTrue(HeartbeatRunner.runHeartbeatSlot(container, firstNow))
+        assertEquals(false, HeartbeatRunner.runHeartbeatSlot(container, secondNow))
+
+        assertEquals(1, container.sender.requests.size)
+        assertEquals(firstNow, container.configRepository.getHeartbeatLastAttemptAt())
+        assertTrue(
+            container.eventRepository.observeLogs().first().any {
+                it.text == "Heartbeat skipped because next slot is not due yet"
+            },
+        )
+    }
+
+    @Test
+    fun heartbeatWorkerSendsAgainAfterIntervalElapsed() = runBlocking {
+        val container = testAppContainer()
+        val firstNow = Instant.parse("2026-04-04T12:00:00Z").toEpochMilli()
+        val secondNow = firstNow + HeartbeatRunner.INTERVAL_MILLIS
+        container.configRepository.saveConfig(AppConfig(heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb")))
+
+        assertTrue(HeartbeatRunner.runHeartbeatSlot(container, firstNow))
+        assertTrue(HeartbeatRunner.runHeartbeatSlot(container, secondNow))
+
+        assertEquals(2, container.sender.requests.size)
+        assertEquals(secondNow, container.configRepository.getHeartbeatLastAttemptAt())
     }
 
     @Test
@@ -383,6 +417,30 @@ class WorkerAndSchedulerTest {
         val future = scheduler.scheduled.single { it.first == futureId }
         assertEquals(0L, overdue.second)
         assertTrue(future.second in (futureDelay - 2_000L)..futureDelay)
+    }
+
+    @Test
+    fun eventSchedulerCancelsLegacyHeartbeatWorkerWorkWhenEnsured() = runBlockingTest {
+        val context = ApplicationProvider.getApplicationContext<TestSmsForwarderApp>()
+        val database = testAppContainer().database
+        val workManager = WorkManager.getInstance(context)
+        val scheduler = EventScheduler(context, workManager, database.queueDao())
+        val legacyRequest = OneTimeWorkRequestBuilder<HeartbeatWorker>()
+            .addTag(HeartbeatWorker::class.java.name)
+            .build()
+
+        workManager.enqueue(legacyRequest).result.get()
+        waitFor {
+            workManager.getWorkInfosByTag(HeartbeatWorker::class.java.name).get().any { it.id == legacyRequest.id }
+        }
+
+        scheduler.ensureRecurringWork()
+
+        waitFor {
+            workManager.getWorkInfosByTag(HeartbeatWorker::class.java.name).get()
+                .filter { it.id == legacyRequest.id }
+                .all { it.state == WorkInfo.State.CANCELLED }
+        }
     }
 
     @Test

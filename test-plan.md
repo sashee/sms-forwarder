@@ -186,6 +186,8 @@ File target:
 Tests:
 - skips and logs when heartbeat URL is blank
 - sends heartbeat once when config is present
+- skips and logs when a second heartbeat trigger arrives before the 30-minute interval is due
+- sends again once the 30-minute interval has elapsed
 - logs success on HTTP response
 - logs failure on exception
 - does not schedule retry on failure
@@ -223,6 +225,7 @@ Tests:
 - applies network-required constraints to delivery work
 - starts the heartbeat foreground service when recurring work is ensured
 - schedules a heartbeat recovery alarm for the next due time
+- cancels legacy `HeartbeatWorker` work tagged for older heartbeat scheduling before arming the current heartbeat path
 
 ### HeartbeatForegroundService
 
@@ -295,6 +298,14 @@ Tests:
 - works for `LOCKED_BOOT_COMPLETED`
 - re-arms the heartbeat service/alarm hybrid path via scheduler startup
 - restores multiple queued deliveries with the correct relative delays
+
+### SmsForwarderApp
+
+File target:
+- `app/src/main/java/com/example/smsforwarder/SmsForwarderApp.kt`
+
+Tests:
+- app startup initializes the container without automatically arming recurring heartbeat work
 
 ### ForwardingCallScreeningService
 

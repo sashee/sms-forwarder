@@ -11,7 +11,6 @@ open class SmsForwarderApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         appContainer = createAppContainer()
-        appContainer.scheduler.ensureRecurringWork()
     }
 
     protected open fun createAppContainer(): AppContainer = AppContainer(this)

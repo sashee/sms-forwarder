@@ -50,6 +50,7 @@ class RecordingHttpSender : HttpSender {
 open class RecordingScheduler(context: Context, queueDao: com.example.smsforwarder.data.QueueDao) :
     EventScheduler(context, WorkManager.getInstance(context), queueDao) {
     var heartbeatScheduledCount: Int = 0
+    var legacyHeartbeatCleanupCount: Int = 0
     var heartbeatServiceStartCount: Int = 0
     val heartbeatAlarmTimes: MutableList<Long> = CopyOnWriteArrayList()
     val enqueuedDeliveries: MutableList<Pair<Long, Long>> = CopyOnWriteArrayList()
@@ -57,6 +58,11 @@ open class RecordingScheduler(context: Context, queueDao: com.example.smsforward
 
     override fun ensureRecurringWork() {
         heartbeatScheduledCount += 1
+        cancelLegacyHeartbeatWork()
+    }
+
+    override fun cancelLegacyHeartbeatWork() {
+        legacyHeartbeatCleanupCount += 1
     }
 
     override fun startHeartbeatService(reason: String) {

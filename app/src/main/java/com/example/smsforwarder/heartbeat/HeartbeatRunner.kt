@@ -15,7 +15,10 @@ object HeartbeatRunner {
     }
 
     suspend fun runHeartbeatSlot(appContainer: AppContainer, now: Long = System.currentTimeMillis()): Boolean {
-        appContainer.configRepository.setHeartbeatLastAttemptAt(now)
+        if (!appContainer.configRepository.claimHeartbeatSlot(now, INTERVAL_MILLIS)) {
+            appContainer.eventRepository.addLog("Heartbeat skipped because next slot is not due yet")
+            return false
+        }
         trimLogsIfNeeded(appContainer, now)
 
         val faultState = appContainer.configRepository.getFaultState()

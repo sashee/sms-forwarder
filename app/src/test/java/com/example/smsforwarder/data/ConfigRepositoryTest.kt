@@ -10,7 +10,9 @@ import com.example.smsforwarder.testing.clearDataStore
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -112,5 +114,17 @@ class ConfigRepositoryTest {
         assertEquals(config, repository.getConfig())
         assertEquals(FaultState("broken", 123L), repository.getFaultState())
         assertEquals(456L, repository.getLogLastTrimAt())
+    }
+
+    @Test
+    fun claimHeartbeatSlotOnlyClaimsWhenIntervalIsDue() = runBlocking {
+        assertTrue(repository.claimHeartbeatSlot(now = 1_000L, intervalMillis = 1_800_000L))
+        assertEquals(1_000L, repository.getHeartbeatLastAttemptAt())
+
+        assertFalse(repository.claimHeartbeatSlot(now = 2_000L, intervalMillis = 1_800_000L))
+        assertEquals(1_000L, repository.getHeartbeatLastAttemptAt())
+
+        assertTrue(repository.claimHeartbeatSlot(now = 1_801_000L, intervalMillis = 1_800_000L))
+        assertEquals(1_801_000L, repository.getHeartbeatLastAttemptAt())
     }
 }
