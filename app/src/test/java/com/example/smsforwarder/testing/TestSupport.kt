@@ -50,11 +50,25 @@ class RecordingHttpSender : HttpSender {
 open class RecordingScheduler(context: Context, queueDao: com.example.smsforwarder.data.QueueDao) :
     EventScheduler(context, WorkManager.getInstance(context), queueDao) {
     var heartbeatScheduledCount: Int = 0
+    var heartbeatServiceStartCount: Int = 0
+    val heartbeatAlarmTimes: MutableList<Long> = CopyOnWriteArrayList()
     val enqueuedDeliveries: MutableList<Pair<Long, Long>> = CopyOnWriteArrayList()
     var rescheduleInvocations: Int = 0
 
     override fun ensureRecurringWork() {
         heartbeatScheduledCount += 1
+    }
+
+    override fun startHeartbeatService(reason: String) {
+        heartbeatServiceStartCount += 1
+    }
+
+    override fun scheduleHeartbeatRecoveryAlarm(triggerAtMillis: Long) {
+        heartbeatAlarmTimes += triggerAtMillis
+        runBlocking {
+            val appContainer = (context.applicationContext as TestSmsForwarderApp).appContainer as TestAppContainer
+            appContainer.configRepository.setHeartbeatAlarmScheduledAt(triggerAtMillis)
+        }
     }
 
     override fun enqueueDelivery(eventId: Long, delayMillis: Long) {
@@ -121,6 +135,10 @@ fun installTestContainer(factory: (Context) -> AppContainer = { TestAppContainer
                 container.configRepository.clearFaultState()
                 container.configRepository.clearCallScreeningSeenAt()
                 container.configRepository.clearTelephonyCallSeenAt()
+                container.configRepository.clearHeartbeatLastAttemptAt()
+                container.configRepository.clearHeartbeatLastSuccessAt()
+                container.configRepository.clearHeartbeatServiceSeenAt()
+                container.configRepository.clearHeartbeatAlarmScheduledAt()
             }
         }
     }

@@ -93,6 +93,78 @@ class ConfigRepository(private val context: Context) {
 
     suspend fun getTelephonyCallSeenAt(): Long? = telephonyCallSeenAtFlow.firstValue()
 
+    val heartbeatLastAttemptAtFlow: Flow<Long?> = context.dataStore.data.map { preferences ->
+        preferences[longPreferencesKey("heartbeat.last_attempt_at")]
+    }
+
+    val heartbeatLastSuccessAtFlow: Flow<Long?> = context.dataStore.data.map { preferences ->
+        preferences[longPreferencesKey("heartbeat.last_success_at")]
+    }
+
+    val heartbeatServiceSeenAtFlow: Flow<Long?> = context.dataStore.data.map { preferences ->
+        preferences[longPreferencesKey("heartbeat.service_seen_at")]
+    }
+
+    val heartbeatAlarmScheduledAtFlow: Flow<Long?> = context.dataStore.data.map { preferences ->
+        preferences[longPreferencesKey("heartbeat.alarm_scheduled_at")]
+    }
+
+    suspend fun setHeartbeatLastAttemptAt(timestamp: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[longPreferencesKey("heartbeat.last_attempt_at")] = timestamp
+        }
+    }
+
+    suspend fun clearHeartbeatLastAttemptAt() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(longPreferencesKey("heartbeat.last_attempt_at"))
+        }
+    }
+
+    suspend fun getHeartbeatLastAttemptAt(): Long? = heartbeatLastAttemptAtFlow.firstValue()
+
+    suspend fun setHeartbeatLastSuccessAt(timestamp: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[longPreferencesKey("heartbeat.last_success_at")] = timestamp
+        }
+    }
+
+    suspend fun clearHeartbeatLastSuccessAt() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(longPreferencesKey("heartbeat.last_success_at"))
+        }
+    }
+
+    suspend fun getHeartbeatLastSuccessAt(): Long? = heartbeatLastSuccessAtFlow.firstValue()
+
+    suspend fun setHeartbeatServiceSeenAt(timestamp: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[longPreferencesKey("heartbeat.service_seen_at")] = timestamp
+        }
+    }
+
+    suspend fun clearHeartbeatServiceSeenAt() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(longPreferencesKey("heartbeat.service_seen_at"))
+        }
+    }
+
+    suspend fun getHeartbeatServiceSeenAt(): Long? = heartbeatServiceSeenAtFlow.firstValue()
+
+    suspend fun setHeartbeatAlarmScheduledAt(timestamp: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[longPreferencesKey("heartbeat.alarm_scheduled_at")] = timestamp
+        }
+    }
+
+    suspend fun clearHeartbeatAlarmScheduledAt() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(longPreferencesKey("heartbeat.alarm_scheduled_at"))
+        }
+    }
+
+    suspend fun getHeartbeatAlarmScheduledAt(): Long? = heartbeatAlarmScheduledAtFlow.firstValue()
+
     private fun Preferences.toEventConfig(prefix: String): EventConfig = EventConfig(
         url = this[stringPreferencesKey("$prefix.url")] ?: "",
         method = this[stringPreferencesKey("$prefix.method")] ?: "POST",

@@ -33,6 +33,11 @@ class ConfigRepositoryTest {
             repository.saveConfig(AppConfig())
             repository.clearFaultState()
             repository.clearCallScreeningSeenAt()
+            repository.clearTelephonyCallSeenAt()
+            repository.clearHeartbeatLastAttemptAt()
+            repository.clearHeartbeatLastSuccessAt()
+            repository.clearHeartbeatServiceSeenAt()
+            repository.clearHeartbeatAlarmScheduledAt()
         }
     }
 
@@ -47,6 +52,11 @@ class ConfigRepositoryTest {
         assertEquals(AppConfig(), repository.getConfig())
         assertNull(repository.getFaultState())
         assertNull(repository.getCallScreeningSeenAt())
+        assertNull(repository.getTelephonyCallSeenAt())
+        assertNull(repository.getHeartbeatLastAttemptAt())
+        assertNull(repository.getHeartbeatLastSuccessAt())
+        assertNull(repository.getHeartbeatServiceSeenAt())
+        assertNull(repository.getHeartbeatAlarmScheduledAt())
     }
 
     @Test
@@ -60,10 +70,20 @@ class ConfigRepositoryTest {
         repository.saveConfig(config)
         repository.setFaultState("broken", 123L)
         repository.setCallScreeningSeenAt(456L)
+        repository.setTelephonyCallSeenAt(654L)
+        repository.setHeartbeatLastAttemptAt(789L)
+        repository.setHeartbeatLastSuccessAt(987L)
+        repository.setHeartbeatServiceSeenAt(159L)
+        repository.setHeartbeatAlarmScheduledAt(753L)
 
         assertEquals(config, repository.getConfig())
         assertEquals(FaultState("broken", 123L), repository.getFaultState())
         assertEquals(456L, repository.getCallScreeningSeenAt())
+        assertEquals(654L, repository.getTelephonyCallSeenAt())
+        assertEquals(789L, repository.getHeartbeatLastAttemptAt())
+        assertEquals(987L, repository.getHeartbeatLastSuccessAt())
+        assertEquals(159L, repository.getHeartbeatServiceSeenAt())
+        assertEquals(753L, repository.getHeartbeatAlarmScheduledAt())
 
         repository.clearFaultState()
 

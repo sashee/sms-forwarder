@@ -16,7 +16,7 @@ Last updated: 2026-04-03
 - Hands-off operating model: after initial setup (permissions + config), app should run without routine manual action.
 - SMS flow: receive SMS -> generate `eventId` -> enqueue event in DB queue -> worker delivers HTTP -> retry policy applies.
 - Call flow: incoming call -> generate `eventId` -> enqueue event in DB queue -> attempt call reject -> log both enqueue/reject outcomes.
-- Heartbeat flow: `WorkManager` periodic work every 30 minutes (best-effort), single-attempt send.
+- Heartbeat flow: a persistent foreground service is the primary heartbeat driver and an `AlarmManager` recovery alarm restarts it if needed; the target cadence is every 30 minutes, best-effort, with heartbeat reliability treated as a priority over background invisibility.
 - Reboot flow: scheduler/receivers resume processing after reboot.
 - Multipart SMS is handled per part as separate events (no reassembly).
 - Duplicate broadcasts are allowed to produce duplicate events.
@@ -65,7 +65,8 @@ Special values:
 - Retry policy for SMS/call:
   - exponential backoff up to max 1 day
   - after reaching 1 day delay, continue retries indefinitely at 24-hour intervals
-- Heartbeat delivery has no retry: if send fails, log and wait for next 30-minute slot.
+- Heartbeat delivery has no retry: if send fails, log and wait for the next 30-minute slot.
+- Heartbeat timing is still best-effort because Android/Huawei background behavior is not fully controllable, but the implementation should favor reliability using a permanent foreground notification plus `AlarmManager` recovery.
 
 Catastrophic fault mode:
 - Trigger condition: only when SMS/call handler cannot enqueue an event in DB.
@@ -82,6 +83,7 @@ Catastrophic fault mode:
 - Call handling uses `CallScreeningService` on Android 9.
 - Android 9 does not support the `RoleManager` call-screening role request flow; setup must direct the user to the device's system call-screening/caller-ID settings if available.
 - UI includes button to request standard Android battery optimization exemption.
+- Heartbeat reliability may use a permanent foreground notification.
 - Setup/status UI shows `OK`/`NOK` for:
   - SMS permission
   - call screening enabled
@@ -182,3 +184,4 @@ Catastrophic fault mode:
 | D-076 | 2026-04-03 | On Android 9, call handling uses `CallScreeningService` without `RoleManager`; setup UI must guide the user to system call-screening/caller-ID settings instead of requesting a role directly. |
 | D-077 | 2026-04-03 | Because Android 9 disables cleartext traffic by default for apps targeting API 28+, the app must explicitly opt in so configured `http` endpoints are supported. |
 | D-078 | 2026-04-03 | For `https`, the app must trust only an app-bundled CA set derived from `nixpkgs` `cacert` and must not rely on the device system CA store. |
+| D-079 | 2026-04-04 | Heartbeat reliability is a priority: use a permanent foreground service as the primary 30-minute heartbeat driver, with `AlarmManager` as a recovery path if the service is killed; cadence remains best-effort rather than exact. |

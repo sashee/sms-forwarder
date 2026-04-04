@@ -16,6 +16,7 @@ It excludes:
 - Cover Android entry points (`Activity`, `BroadcastReceiver`, `Service`, `Worker`).
 - Cover persistence, scheduling, and configuration behavior.
 - Cover failure handling and recovery behavior.
+- Cover the hybrid heartbeat reliability model: foreground service primary path plus `AlarmManager` recovery.
 - Keep tests deterministic and independent of the local `robolectric/` source checkout.
 
 ## Test Categories
@@ -93,6 +94,10 @@ Tests:
 - fault state save/load works
 - fault state clear works
 - call-screening-seen timestamp save/load works
+- telephony-call-seen timestamp save/load works
+- heartbeat last-attempt timestamp save/load works
+- heartbeat last-success timestamp save/load works
+- heartbeat foreground-service-seen timestamp save/load works
 
 ### EventRepository
 
@@ -183,6 +188,8 @@ Tests:
 - logs failure on exception
 - does not schedule retry on failure
 - does not set catastrophic fault state on delivery failure
+- updates heartbeat attempt timestamp on each run
+- updates heartbeat success timestamp on success only
 - when fault state is active and younger than 24 hours:
   - skips heartbeat send
   - writes skip log
@@ -198,11 +205,35 @@ File target:
 - `app/src/main/java/com/example/smsforwarder/work/EventScheduler.kt`
 
 Tests:
-- schedules unique periodic heartbeat work
 - schedules unique delivery work for queued event
 - reschedules queued events with zero delay when overdue
 - reschedules queued events with remaining delay when in future
-- applies network-required constraints to heartbeat and delivery work
+- applies network-required constraints to delivery work
+- starts the heartbeat foreground service when recurring work is ensured
+- schedules a heartbeat recovery alarm for the next due time
+
+### HeartbeatForegroundService
+
+File target:
+- `app/src/main/java/com/example/smsforwarder/heartbeat/HeartbeatForegroundService.kt`
+
+Tests:
+- starts in the foreground with a persistent notification
+- records foreground-service-seen timestamp
+- sends heartbeat immediately when overdue or never attempted
+- waits for the next due time when the last attempt is recent
+- schedules the next recovery alarm each loop iteration
+- keeps using single-attempt heartbeat semantics via shared heartbeat execution logic
+
+### HeartbeatAlarmReceiver
+
+File target:
+- `app/src/main/java/com/example/smsforwarder/heartbeat/HeartbeatAlarmReceiver.kt`
+
+Tests:
+- ignores unrelated actions
+- starts the heartbeat foreground service for the app alarm action
+- logs that the recovery alarm fired
 
 ### BootReceiver
 
@@ -249,6 +280,7 @@ Tests:
 - writes boot log
 - works for `BOOT_COMPLETED`
 - works for `LOCKED_BOOT_COMPLETED`
+- re-arms the heartbeat service/alarm hybrid path via scheduler startup
 
 ### ForwardingCallScreeningService
 

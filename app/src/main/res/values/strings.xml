@@ -2,6 +2,10 @@
     <string name="app_name">SMS Forwarder</string>
     <string name="status_ok">OK</string>
     <string name="status_nok">NOK</string>
+    <string name="heartbeat_notification_channel_name">Heartbeat service</string>
+    <string name="heartbeat_notification_channel_description">Keeps heartbeat delivery running in the foreground.</string>
+    <string name="heartbeat_notification_title">SMS Forwarder active</string>
+    <string name="heartbeat_notification_text">Heartbeat reliability mode is running.</string>
     <string name="heartbeat_body_example">Example body: alive</string>
     <string name="sms_body_example">Example body: {&quot;from&quot;:&quot;{{sms.number}}&quot;,&quot;text&quot;:&quot;{{sms.text}}&quot;,&quot;received_at&quot;:&quot;{{sms.timestamp}}&quot;}</string>
     <string name="call_body_example">Example body: {&quot;from&quot;:&quot;{{call.number}}&quot;,&quot;received_at&quot;:&quot;{{call.timestamp}}&quot;}</string>

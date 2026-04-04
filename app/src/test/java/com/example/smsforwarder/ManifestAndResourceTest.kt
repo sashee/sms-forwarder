@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import androidx.test.core.app.ApplicationProvider
+import com.example.smsforwarder.heartbeat.HeartbeatAlarmReceiver
+import com.example.smsforwarder.heartbeat.HeartbeatForegroundService
 import com.example.smsforwarder.receiver.BootReceiver
 import com.example.smsforwarder.receiver.CallStateReceiver
 import com.example.smsforwarder.receiver.SmsReceiver
@@ -34,11 +36,15 @@ class ManifestAndResourceTest {
         assertTrue(permissions.contains(Manifest.permission.READ_PHONE_STATE))
         assertTrue(permissions.contains(Manifest.permission.READ_CALL_LOG))
         assertTrue(permissions.contains(Manifest.permission.RECEIVE_BOOT_COMPLETED))
+        assertTrue(permissions.contains(Manifest.permission.FOREGROUND_SERVICE))
+        assertTrue(permissions.contains(Manifest.permission.FOREGROUND_SERVICE_DATA_SYNC))
         assertTrue(permissions.contains(Manifest.permission.INTERNET))
         assertTrue(packageInfo.receivers.any { it.name.endsWith("SmsReceiver") })
         assertTrue(packageInfo.receivers.any { it.name.endsWith("CallStateReceiver") })
+        assertTrue(packageInfo.receivers.any { it.name.endsWith("HeartbeatAlarmReceiver") })
         assertTrue(packageInfo.receivers.any { it.name.endsWith("BootReceiver") })
         assertTrue(packageInfo.services.any { it.name.endsWith("ForwardingCallScreeningService") })
+        assertTrue(packageInfo.services.any { it.name.endsWith("HeartbeatForegroundService") })
         assertEquals(Manifest.permission.BIND_SCREENING_SERVICE, service.permission)
     }
 
@@ -56,6 +62,10 @@ class ManifestAndResourceTest {
             Intent("android.intent.action.PHONE_STATE").setPackage(context.packageName),
             0,
         )
+        val heartbeatAlarmReceivers = packageManager.queryBroadcastReceivers(
+            Intent(HeartbeatAlarmReceiver.ACTION_HEARTBEAT_ALARM).setPackage(context.packageName),
+            0,
+        )
         val lockedBootReceivers = packageManager.queryBroadcastReceivers(
             Intent(Intent.ACTION_LOCKED_BOOT_COMPLETED).setPackage(context.packageName),
             0,
@@ -64,13 +74,19 @@ class ManifestAndResourceTest {
             ComponentName(context, ForwardingCallScreeningService::class.java),
             PackageManager.GET_META_DATA,
         )
+        val heartbeatServiceInfo = packageManager.getServiceInfo(
+            ComponentName(context, HeartbeatForegroundService::class.java),
+            PackageManager.GET_META_DATA,
+        )
         val applicationInfo = context.applicationInfo
 
         assertTrue(smsReceivers.any { it.activityInfo.name == SmsReceiver::class.java.name })
         assertTrue(phoneStateReceivers.any { it.activityInfo.name == CallStateReceiver::class.java.name })
+        assertTrue(heartbeatAlarmReceivers.any { it.activityInfo.name == HeartbeatAlarmReceiver::class.java.name })
         assertTrue(bootReceivers.any { it.activityInfo.name == BootReceiver::class.java.name })
         assertTrue(lockedBootReceivers.any { it.activityInfo.name == BootReceiver::class.java.name })
         assertEquals(Manifest.permission.BIND_SCREENING_SERVICE, serviceInfo.permission)
+        assertEquals(0, heartbeatServiceInfo.flags and android.content.pm.ServiceInfo.FLAG_STOP_WITH_TASK)
         assertTrue(applicationInfo.flags and ApplicationInfo.FLAG_USES_CLEARTEXT_TRAFFIC != 0)
         val networkSecurityConfigRes = ApplicationInfo::class.java.getDeclaredField("networkSecurityConfigRes").apply {
             isAccessible = true
