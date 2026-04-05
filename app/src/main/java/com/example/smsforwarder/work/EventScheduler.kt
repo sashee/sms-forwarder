@@ -19,7 +19,9 @@ import com.example.smsforwarder.heartbeat.HeartbeatForegroundService
 import com.example.smsforwarder.heartbeat.HeartbeatRunner
 import com.example.smsforwarder.heartbeat.HeartbeatSupervisor
 import com.example.smsforwarder.util.TimeFormatter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 open class EventScheduler(
@@ -30,6 +32,8 @@ open class EventScheduler(
     private data class HeartbeatAlarmState(
         val nextDueAt: Long,
         val scheduledAt: Long?,
+        val scheduledBootCount: Long?,
+        val currentBootCount: Long?,
         val isMissing: Boolean,
         val isStale: Boolean,
         val isTooFarAhead: Boolean,
@@ -39,7 +43,7 @@ open class EventScheduler(
         context.getSystemService(AlarmManager::class.java)
     }
 
-    open fun ensureRecurringWork() {
+    open suspend fun ensureRecurringWork() {
         cancelLegacyHeartbeatWork()
         ensureHeartbeatScheduled("scheduler", startServiceIfOverdue = true)
     }
@@ -95,8 +99,8 @@ open class EventScheduler(
         context.stopService(HeartbeatForegroundService.createStartIntent(context, "stop"))
     }
 
-    open fun ensureHeartbeatScheduled(reason: String, startServiceIfOverdue: Boolean) {
-        runBlocking {
+    open suspend fun ensureHeartbeatScheduled(reason: String, startServiceIfOverdue: Boolean) {
+        withContext(Dispatchers.IO) {
             val appContainer = (context.applicationContext as com.example.smsforwarder.SmsForwarderApp).appContainer
             HeartbeatSupervisor.run(
                 appContainer = appContainer,
@@ -120,11 +124,11 @@ open class EventScheduler(
                 else -> "misaligned"
             }
             appContainer.eventRepository.addLog(
-                "Heartbeat alarm repair requested via $reason ($status) with scheduledAt=${TimeFormatter.toDebugLocal(state.scheduledAt)} nextDueAt=${TimeFormatter.toDebugLocal(state.nextDueAt)}",
+                "Heartbeat alarm repair requested via $reason ($status) with scheduledAt=${TimeFormatter.toDebugLocal(state.scheduledAt)} scheduledBootCount=${state.scheduledBootCount ?: "none"} currentBootCount=${state.currentBootCount ?: "none"} nextDueAt=${TimeFormatter.toDebugLocal(state.nextDueAt)}",
             )
         } else {
             appContainer.eventRepository.addLog(
-                "Heartbeat alarm check via $reason found scheduledAt=${TimeFormatter.toDebugLocal(state.scheduledAt)} nextDueAt=${TimeFormatter.toDebugLocal(state.nextDueAt)}",
+                "Heartbeat alarm check via $reason found scheduledAt=${TimeFormatter.toDebugLocal(state.scheduledAt)} scheduledBootCount=${state.scheduledBootCount ?: "none"} currentBootCount=${state.currentBootCount ?: "none"} nextDueAt=${TimeFormatter.toDebugLocal(state.nextDueAt)}",
             )
         }
 
@@ -147,7 +151,7 @@ open class EventScheduler(
         }
         runBlocking {
             val appContainer = (context.applicationContext as com.example.smsforwarder.SmsForwarderApp).appContainer
-            appContainer.configRepository.setHeartbeatAlarmScheduledAt(triggerAtMillis)
+            appContainer.configRepository.setHeartbeatAlarmScheduledState(triggerAtMillis, appContainer.configRepository.currentBootCount())
             appContainer.eventRepository.addLog(
                 "Heartbeat recovery alarm scheduled for ${TimeFormatter.toDebugLocal(triggerAtMillis)}",
             )
@@ -158,7 +162,7 @@ open class EventScheduler(
         alarmManager.cancel(heartbeatAlarmIntent())
         runBlocking {
             val appContainer = (context.applicationContext as com.example.smsforwarder.SmsForwarderApp).appContainer
-            appContainer.configRepository.clearHeartbeatAlarmScheduledAt()
+            appContainer.configRepository.clearHeartbeatAlarmScheduledState()
         }
     }
 
@@ -185,12 +189,17 @@ open class EventScheduler(
     ): HeartbeatAlarmState {
         val nextDueAt = HeartbeatRunner.nextDueAt(appContainer, now)
         val scheduledAt = appContainer.configRepository.getHeartbeatAlarmScheduledAt()
-        val isMissing = scheduledAt == null
+        val scheduledBootCount = appContainer.configRepository.getHeartbeatAlarmScheduledBootCount()
+        val currentBootCount = appContainer.configRepository.currentBootCount()
+        val isCurrentBoot = currentBootCount != null && scheduledBootCount == currentBootCount
+        val isMissing = scheduledAt == null || !isCurrentBoot
         val isStale = scheduledAt?.let { it < nextDueAt } == true
         val isTooFarAhead = scheduledAt?.let { it > nextDueAt + HeartbeatRunner.INTERVAL_MILLIS } == true
         return HeartbeatAlarmState(
             nextDueAt = nextDueAt,
             scheduledAt = scheduledAt,
+            scheduledBootCount = scheduledBootCount,
+            currentBootCount = currentBootCount,
             isMissing = isMissing,
             isStale = isStale,
             isTooFarAhead = isTooFarAhead,

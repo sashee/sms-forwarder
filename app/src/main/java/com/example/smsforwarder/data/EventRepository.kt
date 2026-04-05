@@ -18,7 +18,7 @@ open class EventRepository(
         const val LOGCAT_TAG = "SmsForwarder"
     }
 
-    open fun observeLogs(limit: Int = 100): Flow<List<LogEntryEntity>> = database.logDao().observeLatest(limit)
+    open fun observeLogs(limit: Int = 300): Flow<List<LogEntryEntity>> = database.logDao().observeLatest(limit)
 
     open suspend fun enqueueSms(number: String, text: String, timestamp: Long): Long {
         val config = configRepository.getConfig().sms

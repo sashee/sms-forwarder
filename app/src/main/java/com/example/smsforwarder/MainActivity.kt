@@ -7,8 +7,10 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.widget.HorizontalScrollView
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -16,7 +18,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.smsforwarder.model.AppConfig
 import com.example.smsforwarder.model.EventConfig
-import com.example.smsforwarder.util.TimeFormatter
+import com.example.smsforwarder.util.UiLogFormatter
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -62,8 +64,12 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             appContainer.eventRepository.observeLogs().collect { logs ->
-                findViewById<TextView>(R.id.logText).text = logs.joinToString("\n") {
-                    "${TimeFormatter.toIsoUtc(it.timestamp)}: ${it.text}"
+                val horizontalScroll = findViewById<HorizontalScrollView>(R.id.logHorizontalScroll)
+                val preservedScrollX = horizontalScroll.scrollX
+                findViewById<TextView>(R.id.logText).text = UiLogFormatter.format(logs)
+                horizontalScroll.post { horizontalScroll.scrollTo(preservedScrollX, 0) }
+                findViewById<ScrollView>(R.id.logVerticalScroll).post {
+                    findViewById<ScrollView>(R.id.logVerticalScroll).scrollTo(0, 0)
                 }
             }
         }

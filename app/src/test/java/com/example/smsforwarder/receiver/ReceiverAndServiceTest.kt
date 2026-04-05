@@ -153,8 +153,15 @@ class ReceiverAndServiceTest {
     @Test
     fun bootReceiverReschedulesAndLogsForBootCompleted() = runBlocking {
         val container = testAppContainer()
-        container.configRepository.saveConfig(AppConfig(sms = EventConfig("http://sms", "POST", "text/plain", "body")))
+        container.configRepository.saveConfig(
+            AppConfig(
+                heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb"),
+                sms = EventConfig("http://sms", "POST", "text/plain", "body"),
+            ),
+        )
         container.eventRepository.enqueueSms("+1555", "one", 1L)
+        container.configRepository.setHeartbeatServiceSeenState(System.currentTimeMillis(), 999L)
+        container.configRepository.setHeartbeatAlarmScheduledState(System.currentTimeMillis() + 60_000L, 999L)
 
         BootReceiver().onReceive(ApplicationProvider.getApplicationContext(), Intent(Intent.ACTION_BOOT_COMPLETED))
 
@@ -162,7 +169,10 @@ class ReceiverAndServiceTest {
         waitFor { container.scheduler.rescheduleInvocations == 1 }
         waitFor { runBlocking { container.eventRepository.observeLogs().first().isNotEmpty() } }
         assertEquals(1, container.scheduler.heartbeatRepairCount)
-        assertEquals("Boot completed; rescheduling work", container.eventRepository.observeLogs().first().first().text)
+        assertEquals(1, container.scheduler.heartbeatServiceStartCount)
+        assertTrue(container.eventRepository.observeLogs().first().any { it.text == "Boot completed; rescheduling work" })
+        assertTrue(container.eventRepository.observeLogs().first().any { it.text.contains("requested foreground service start") })
+        assertTrue(container.eventRepository.observeLogs().first().any { it.text.contains("Heartbeat alarm repair requested via supervisor:scheduler") })
     }
 
     @Test

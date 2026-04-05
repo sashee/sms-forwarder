@@ -351,7 +351,7 @@ Tests:
 - clear logs button exists
 - config fields are populated from saved preferences on launch
 - log text updates when log entries exist
-- log view shows only the latest 100 entries when more logs exist
+- log view shows only the latest 300 entries when more logs exist
 
 ### MainActivity Save Behavior
 

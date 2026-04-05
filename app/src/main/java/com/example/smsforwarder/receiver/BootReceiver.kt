@@ -15,8 +15,10 @@ class BootReceiver : BroadcastReceiver() {
         }
 
         val appContainer = (context.applicationContext as SmsForwarderApp).appContainer
-        appContainer.scheduler.ensureRecurringWork()
         CoroutineScope(Dispatchers.IO).launch {
+            appContainer.configRepository.clearHeartbeatServiceSeenState()
+            appContainer.configRepository.clearHeartbeatAlarmScheduledState()
+            appContainer.scheduler.ensureRecurringWork()
             appContainer.eventRepository.addLog("Boot completed; rescheduling work")
             appContainer.scheduler.rescheduleQueuedEvents()
         }

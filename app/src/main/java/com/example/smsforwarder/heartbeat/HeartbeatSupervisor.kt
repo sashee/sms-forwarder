@@ -1,6 +1,7 @@
 package com.example.smsforwarder.heartbeat
 
 import com.example.smsforwarder.AppContainer
+import com.example.smsforwarder.util.BootState
 import com.example.smsforwarder.util.TimeFormatter
 import com.example.smsforwarder.work.EventScheduler
 
@@ -20,6 +21,8 @@ object HeartbeatSupervisor {
         if (config.url.isBlank()) {
             scheduler.cancelHeartbeatAlarm()
             scheduler.cancelHeartbeatWatchdogWork()
+            appContainer.configRepository.clearHeartbeatServiceSeenState()
+            appContainer.configRepository.clearHeartbeatAlarmScheduledState()
             if (ensureService) {
                 scheduler.stopHeartbeatService()
             }
@@ -51,15 +54,18 @@ object HeartbeatSupervisor {
 
     private suspend fun ensureForegroundService(appContainer: AppContainer, scheduler: EventScheduler, reason: String, now: Long) {
         val seenAt = appContainer.configRepository.getHeartbeatServiceSeenAt()
-        val serviceIsStale = seenAt == null || now - seenAt > SERVICE_STALE_AFTER_MILLIS
+        val seenBootCount = appContainer.configRepository.getHeartbeatServiceSeenBootCount()
+        val currentBootCount = appContainer.configRepository.currentBootCount()
+        val serviceIsCurrentBoot = currentBootCount != null && seenBootCount == currentBootCount
+        val serviceIsStale = seenAt == null || !serviceIsCurrentBoot || now - seenAt > SERVICE_STALE_AFTER_MILLIS
         if (serviceIsStale) {
             appContainer.eventRepository.addLog(
-                "Heartbeat supervisor via $reason requested foreground service start with lastSeenAt=${TimeFormatter.toDebugLocal(seenAt)}",
+                "Heartbeat supervisor via $reason requested foreground service start with lastSeenAt=${TimeFormatter.toDebugLocal(seenAt)} lastSeenBootCount=${seenBootCount ?: "none"} currentBootCount=${currentBootCount ?: "none"}",
             )
             scheduler.startHeartbeatService("supervisor:$reason")
         } else {
             appContainer.eventRepository.addLog(
-                "Heartbeat supervisor via $reason confirmed foreground service health with lastSeenAt=${TimeFormatter.toDebugLocal(seenAt)}",
+                "Heartbeat supervisor via $reason confirmed foreground service health with lastSeenAt=${TimeFormatter.toDebugLocal(seenAt)} lastSeenBootCount=${seenBootCount ?: "none"} currentBootCount=${currentBootCount ?: "none"}",
             )
         }
     }

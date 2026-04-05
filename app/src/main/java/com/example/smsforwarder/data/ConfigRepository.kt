@@ -1,6 +1,7 @@
 package com.example.smsforwarder.data
 
 import android.content.Context
+import com.example.smsforwarder.util.BootState
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -105,8 +106,16 @@ class ConfigRepository(private val context: Context) {
         preferences[longPreferencesKey("heartbeat.service_seen_at")]
     }
 
+    val heartbeatServiceSeenBootCountFlow: Flow<Long?> = context.dataStore.data.map { preferences ->
+        preferences[longPreferencesKey("heartbeat.service_seen_boot_count")]
+    }
+
     val heartbeatAlarmScheduledAtFlow: Flow<Long?> = context.dataStore.data.map { preferences ->
         preferences[longPreferencesKey("heartbeat.alarm_scheduled_at")]
+    }
+
+    val heartbeatAlarmScheduledBootCountFlow: Flow<Long?> = context.dataStore.data.map { preferences ->
+        preferences[longPreferencesKey("heartbeat.alarm_scheduled_boot_count")]
     }
 
     val logLastTrimAtFlow: Flow<Long?> = context.dataStore.data.map { preferences ->
@@ -160,17 +169,68 @@ class ConfigRepository(private val context: Context) {
         }
     }
 
+    suspend fun setHeartbeatServiceSeenBootCount(bootCount: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[longPreferencesKey("heartbeat.service_seen_boot_count")] = bootCount
+        }
+    }
+
+    suspend fun setHeartbeatServiceSeenState(timestamp: Long, bootCount: Long?) {
+        context.dataStore.edit { preferences ->
+            preferences[longPreferencesKey("heartbeat.service_seen_at")] = timestamp
+            if (bootCount == null) {
+                preferences.remove(longPreferencesKey("heartbeat.service_seen_boot_count"))
+            } else {
+                preferences[longPreferencesKey("heartbeat.service_seen_boot_count")] = bootCount
+            }
+        }
+    }
+
     suspend fun clearHeartbeatServiceSeenAt() {
         context.dataStore.edit { preferences ->
             preferences.remove(longPreferencesKey("heartbeat.service_seen_at"))
         }
     }
 
+    suspend fun clearHeartbeatServiceSeenBootCount() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(longPreferencesKey("heartbeat.service_seen_boot_count"))
+        }
+    }
+
+    suspend fun clearHeartbeatServiceSeenState() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(longPreferencesKey("heartbeat.service_seen_at"))
+            preferences.remove(longPreferencesKey("heartbeat.service_seen_boot_count"))
+        }
+    }
+
     suspend fun getHeartbeatServiceSeenAt(): Long? = heartbeatServiceSeenAtFlow.firstValue()
+
+    suspend fun getHeartbeatServiceSeenBootCount(): Long? = heartbeatServiceSeenBootCountFlow.firstValue()
+
+    fun currentBootCount(): Long? = BootState.currentBootCount(context)
 
     suspend fun setHeartbeatAlarmScheduledAt(timestamp: Long) {
         context.dataStore.edit { preferences ->
             preferences[longPreferencesKey("heartbeat.alarm_scheduled_at")] = timestamp
+        }
+    }
+
+    suspend fun setHeartbeatAlarmScheduledBootCount(bootCount: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[longPreferencesKey("heartbeat.alarm_scheduled_boot_count")] = bootCount
+        }
+    }
+
+    suspend fun setHeartbeatAlarmScheduledState(timestamp: Long, bootCount: Long?) {
+        context.dataStore.edit { preferences ->
+            preferences[longPreferencesKey("heartbeat.alarm_scheduled_at")] = timestamp
+            if (bootCount == null) {
+                preferences.remove(longPreferencesKey("heartbeat.alarm_scheduled_boot_count"))
+            } else {
+                preferences[longPreferencesKey("heartbeat.alarm_scheduled_boot_count")] = bootCount
+            }
         }
     }
 
@@ -180,7 +240,22 @@ class ConfigRepository(private val context: Context) {
         }
     }
 
+    suspend fun clearHeartbeatAlarmScheduledBootCount() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(longPreferencesKey("heartbeat.alarm_scheduled_boot_count"))
+        }
+    }
+
+    suspend fun clearHeartbeatAlarmScheduledState() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(longPreferencesKey("heartbeat.alarm_scheduled_at"))
+            preferences.remove(longPreferencesKey("heartbeat.alarm_scheduled_boot_count"))
+        }
+    }
+
     suspend fun getHeartbeatAlarmScheduledAt(): Long? = heartbeatAlarmScheduledAtFlow.firstValue()
+
+    suspend fun getHeartbeatAlarmScheduledBootCount(): Long? = heartbeatAlarmScheduledBootCountFlow.firstValue()
 
     suspend fun setLogLastTrimAt(timestamp: Long) {
         context.dataStore.edit { preferences ->

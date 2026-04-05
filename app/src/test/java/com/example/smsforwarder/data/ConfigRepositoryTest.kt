@@ -38,8 +38,8 @@ class ConfigRepositoryTest {
             repository.clearTelephonyCallSeenAt()
             repository.clearHeartbeatLastAttemptAt()
             repository.clearHeartbeatLastSuccessAt()
-            repository.clearHeartbeatServiceSeenAt()
-            repository.clearHeartbeatAlarmScheduledAt()
+            repository.clearHeartbeatServiceSeenState()
+            repository.clearHeartbeatAlarmScheduledState()
             repository.clearLogLastTrimAt()
         }
     }
@@ -59,7 +59,9 @@ class ConfigRepositoryTest {
         assertNull(repository.getHeartbeatLastAttemptAt())
         assertNull(repository.getHeartbeatLastSuccessAt())
         assertNull(repository.getHeartbeatServiceSeenAt())
+        assertNull(repository.getHeartbeatServiceSeenBootCount())
         assertNull(repository.getHeartbeatAlarmScheduledAt())
+        assertNull(repository.getHeartbeatAlarmScheduledBootCount())
         assertNull(repository.getLogLastTrimAt())
     }
 
@@ -77,8 +79,8 @@ class ConfigRepositoryTest {
         repository.setTelephonyCallSeenAt(654L)
         repository.setHeartbeatLastAttemptAt(789L)
         repository.setHeartbeatLastSuccessAt(987L)
-        repository.setHeartbeatServiceSeenAt(159L)
-        repository.setHeartbeatAlarmScheduledAt(753L)
+        repository.setHeartbeatServiceSeenState(159L, 7L)
+        repository.setHeartbeatAlarmScheduledState(753L, 8L)
         repository.setLogLastTrimAt(852L)
 
         assertEquals(config, repository.getConfig())
@@ -88,7 +90,9 @@ class ConfigRepositoryTest {
         assertEquals(789L, repository.getHeartbeatLastAttemptAt())
         assertEquals(987L, repository.getHeartbeatLastSuccessAt())
         assertEquals(159L, repository.getHeartbeatServiceSeenAt())
+        assertEquals(7L, repository.getHeartbeatServiceSeenBootCount())
         assertEquals(753L, repository.getHeartbeatAlarmScheduledAt())
+        assertEquals(8L, repository.getHeartbeatAlarmScheduledBootCount())
         assertEquals(852L, repository.getLogLastTrimAt())
 
         repository.clearFaultState()

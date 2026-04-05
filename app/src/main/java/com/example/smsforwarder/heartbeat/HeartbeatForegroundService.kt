@@ -11,6 +11,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.example.smsforwarder.R
 import com.example.smsforwarder.SmsForwarderApp
+import com.example.smsforwarder.util.BootState
 import com.example.smsforwarder.util.TimeFormatter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -40,7 +41,7 @@ class HeartbeatForegroundService : Service() {
         val isLoopActive = loopJob?.isActive == true
         serviceScope.launch {
             val now = System.currentTimeMillis()
-            appContainer.configRepository.setHeartbeatServiceSeenAt(now)
+            markServiceSeen(now)
             appContainer.eventRepository.addLog(
                 "Heartbeat service start requested via $reason (startId=$startId, executionActive=$isExecutionActive, loopActive=$isLoopActive, now=${TimeFormatter.toDebugLocal(now)})",
             )
@@ -75,7 +76,7 @@ class HeartbeatForegroundService : Service() {
             appContainer.eventRepository.addLog("Heartbeat supervision starting via $reason")
             try {
                 val now = System.currentTimeMillis()
-                appContainer.configRepository.setHeartbeatServiceSeenAt(now)
+                markServiceSeen(now)
                 HeartbeatSupervisor.run(
                     appContainer = appContainer,
                     reason = "service:$reason",
@@ -113,7 +114,7 @@ class HeartbeatForegroundService : Service() {
                 while (true) {
                     delay(HeartbeatSupervisor.SERVICE_CHECK_INTERVAL_MILLIS)
                     val now = System.currentTimeMillis()
-                    appContainer.configRepository.setHeartbeatServiceSeenAt(now)
+                    markServiceSeen(now)
                     HeartbeatSupervisor.run(
                         appContainer = appContainer,
                         reason = "service:loop",
@@ -130,6 +131,10 @@ class HeartbeatForegroundService : Service() {
         }
         startedJob = job
         loopJob = job
+    }
+
+    private suspend fun markServiceSeen(now: Long) {
+        appContainer.configRepository.setHeartbeatServiceSeenState(now, appContainer.configRepository.currentBootCount())
     }
 
     private fun ensureNotificationChannel() {

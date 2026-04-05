@@ -1,13 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:orientation="vertical">
 
-    <LinearLayout
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp">
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
 
         <TextView
             android:layout_width="wrap_content"
@@ -220,21 +226,41 @@
             android:text="@string/call_body_example"
             android:textAppearance="@style/TextAppearance.MaterialComponents.Caption" />
 
-        <TextView
+        </LinearLayout>
+    </ScrollView>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp"
+        android:text="Logs"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />
+
+    <HorizontalScrollView
+        android:id="@+id/logHorizontalScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#22000000"
+        android:fillViewport="true"
+        android:scrollbars="horizontal">
+
+        <ScrollView
+            android:id="@+id/logVerticalScroll"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="Logs"
-            android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1" />
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:scrollbars="vertical">
 
-        <TextView
-            android:id="@+id/logText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="#22000000"
-            android:fontFamily="monospace"
-            android:padding="12dp"
-            android:textIsSelectable="true" />
-
-    </LinearLayout>
-</ScrollView>
+            <TextView
+                android:id="@+id/logText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:padding="12dp"
+                android:textIsSelectable="true" />
+        </ScrollView>
+    </HorizontalScrollView>
+</LinearLayout>

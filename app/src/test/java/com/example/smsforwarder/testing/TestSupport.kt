@@ -58,7 +58,7 @@ open class RecordingScheduler(context: Context, queueDao: com.example.smsforward
     val enqueuedDeliveries: MutableList<Pair<Long, Long>> = CopyOnWriteArrayList()
     var rescheduleInvocations: Int = 0
 
-    override fun ensureRecurringWork() {
+    override suspend fun ensureRecurringWork() {
         heartbeatScheduledCount += 1
         super.ensureRecurringWork()
     }
@@ -71,7 +71,7 @@ open class RecordingScheduler(context: Context, queueDao: com.example.smsforward
         heartbeatServiceStartCount += 1
     }
 
-    override fun ensureHeartbeatScheduled(reason: String, startServiceIfOverdue: Boolean) {
+    override suspend fun ensureHeartbeatScheduled(reason: String, startServiceIfOverdue: Boolean) {
         heartbeatRepairCount += 1
         super.ensureHeartbeatScheduled(reason, startServiceIfOverdue)
     }
@@ -80,7 +80,7 @@ open class RecordingScheduler(context: Context, queueDao: com.example.smsforward
         heartbeatAlarmTimes += triggerAtMillis
         runBlocking {
             val appContainer = (context.applicationContext as TestSmsForwarderApp).appContainer as TestAppContainer
-            appContainer.configRepository.setHeartbeatAlarmScheduledAt(triggerAtMillis)
+            appContainer.configRepository.setHeartbeatAlarmScheduledState(triggerAtMillis, appContainer.configRepository.currentBootCount())
         }
     }
 
@@ -155,8 +155,8 @@ fun installTestContainer(factory: (Context) -> AppContainer = { TestAppContainer
                 container.configRepository.clearTelephonyCallSeenAt()
                 container.configRepository.clearHeartbeatLastAttemptAt()
                 container.configRepository.clearHeartbeatLastSuccessAt()
-                container.configRepository.clearHeartbeatServiceSeenAt()
-                container.configRepository.clearHeartbeatAlarmScheduledAt()
+                container.configRepository.clearHeartbeatServiceSeenState()
+                container.configRepository.clearHeartbeatAlarmScheduledState()
                 container.configRepository.clearLogLastTrimAt()
             }
         }

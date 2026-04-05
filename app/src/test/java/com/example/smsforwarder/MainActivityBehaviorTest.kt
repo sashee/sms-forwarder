@@ -17,6 +17,7 @@ import com.example.smsforwarder.testing.installTestContainer
 import com.example.smsforwarder.testing.testAppContainer
 import com.example.smsforwarder.testing.waitFor
 import com.example.smsforwarder.util.TimeFormatter
+import com.example.smsforwarder.util.UiLogFormatter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -166,16 +167,20 @@ class MainActivityBehaviorTest {
 
     @Test
     fun clearLogsAndLaunchButtonsWork() = runBlocking {
-        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().resume().get()
+        val activity = Robolectric.buildActivity(MainActivity::class.java).create().start().get()
         testAppContainer().eventRepository.clearLogs()
         testAppContainer().eventRepository.addLog("hello", 1L)
         Robolectric.flushForegroundThreadScheduler()
+        val expectedLine = UiLogFormatter.formatLine(
+            com.example.smsforwarder.data.LogEntryEntity(id = 1, timestamp = 1L, text = "hello"),
+            previousTimestamp = null,
+        )
 
         waitFor {
             shadowOf(Looper.getMainLooper()).idle()
-            activity.findViewById<TextView>(R.id.logText).text.toString() == "${TimeFormatter.toIsoUtc(1L)}: hello"
+            activity.findViewById<TextView>(R.id.logText).text.toString().contains(expectedLine)
         }
-        assertEquals("${TimeFormatter.toIsoUtc(1L)}: hello", activity.findViewById<TextView>(R.id.logText).text.toString())
+        assertTrue(activity.findViewById<TextView>(R.id.logText).text.toString().contains(expectedLine))
 
         activity.findViewById<android.widget.Button>(R.id.buttonClearLogs).performClick()
         shadowOf(Looper.getMainLooper()).idle()
@@ -191,24 +196,26 @@ class MainActivityBehaviorTest {
     }
 
     @Test
-    fun logViewShowsOnlyLatestHundredEntries() = runBlocking {
+    fun logViewShowsOnlyLatestThreeHundredEntries() = runBlocking {
         val container = testAppContainer()
-        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().resume().get()
+        val activity = Robolectric.buildActivity(MainActivity::class.java).create().start().get()
         container.eventRepository.clearLogs()
-        repeat(105) { index ->
+        repeat(305) { index ->
             container.eventRepository.addLog("log-$index", index.toLong())
         }
 
         waitFor {
             shadowOf(Looper.getMainLooper()).idle()
-            val lines = activity.findViewById<TextView>(R.id.logText).text.toString().lines().filter { it.isNotBlank() }
-            lines.size == 100
+            activity.findViewById<TextView>(R.id.logText).text.toString().lines().filter { it.isNotBlank() }.size == 300
         }
 
         val renderedLines = activity.findViewById<TextView>(R.id.logText).text.toString().lines().filter { it.isNotBlank() }
-        assertTrue(renderedLines.any { it.endsWith(": log-104") })
-        assertTrue(renderedLines.any { it.endsWith(": log-5") })
-        assertTrue(renderedLines.none { it.endsWith(": log-4") })
+        assertEquals(300, renderedLines.size)
+        assertTrue(renderedLines.first().contains("log-304"))
+        assertTrue(renderedLines.first().startsWith("+0s"))
+        assertTrue(renderedLines.first().contains(TimeFormatter.toIsoLocal(304L)))
+        assertTrue(renderedLines.last().contains("log-5"))
+        assertTrue(renderedLines.none { it.contains("log-0") })
     }
 
     @Test
