@@ -17,7 +17,7 @@ Last updated: 2026-04-04
 - Hands-off operating model: after initial setup (permissions + config), app should run without routine manual action.
 - SMS flow: receive SMS -> generate `eventId` -> enqueue event in DB queue -> worker delivers HTTP -> retry policy applies.
 - Call flow: incoming call -> generate `eventId` -> enqueue event in DB queue -> attempt call reject -> log both enqueue/reject outcomes.
-- Heartbeat flow: a persistent foreground service is the primary heartbeat driver and an `AlarmManager` recovery alarm restarts it if needed; the target cadence is every 30 minutes, best-effort, with heartbeat reliability treated as a priority over background invisibility.
+- Heartbeat flow: `AlarmManager`, `WorkManager`, and a persistent foreground service all act as heartbeat supervision triggers; each trigger runs the same supervisor path that repairs missing infrastructure and sends a heartbeat only when the persisted 30-minute slot is due.
 - Heartbeat send execution is deduplicated by persisted last-attempt state so overlapping triggers inside the same 30-minute interval do not send duplicate heartbeat HTTP requests.
 - Reboot flow: scheduler/receivers resume processing after reboot.
 - Multipart SMS is handled per part as separate events (no reassembly).
@@ -73,11 +73,11 @@ Special values:
   - exponential backoff up to max 1 day
   - after reaching 1 day delay, continue retries indefinitely at 24-hour intervals
 - Heartbeat delivery has no retry: if send fails, log and wait for the next 30-minute slot.
-- Heartbeat timing is still best-effort because Android/Huawei background behavior is not fully controllable. `AlarmManager` is the primary 30-minute heartbeat driver, and the foreground service is only a short-lived execution helper when a heartbeat should run immediately.
+- Heartbeat timing is still best-effort because Android/Huawei background behavior is not fully controllable. Exact alarms, periodic WorkManager, and the persistent foreground service are all used together so any one surviving wake path can repair the others.
 - The app does not arm heartbeat scheduling from generic app-process startup; recurring heartbeat setup/repair is driven by explicit config-save, boot recovery, alarm fire, and other natural app wake paths such as SMS/call handling or opening the UI.
-- `ensureRecurringWork()` must cancel legacy `HeartbeatWorker` WorkManager entries left behind by older app versions before arming the current heartbeat path.
+- `ensureRecurringWork()` must cancel legacy `HeartbeatWorker` WorkManager entries left behind by older app versions before arming the current multi-trigger heartbeat path.
 - Heartbeat logs should explain wake reason, due-time decision, send/skip reason, and recovery-alarm scheduling/repair state to support device-side diagnosis.
-- Any wake path that notices a missing or stale heartbeat alarm should repair it; if heartbeat is already due, that wake path may start the short-lived foreground heartbeat service immediately.
+- Any wake path that enters heartbeat supervision should ensure the watchdog work, recovery alarm, and foreground service are present; if heartbeat is already due, that same supervision pass may send it immediately.
 - Log retention cleanup runs from the heartbeat path at most once per UTC day and deletes log rows older than 6 months.
 
 Catastrophic fault mode:
@@ -196,9 +196,9 @@ Catastrophic fault mode:
 | D-076 | 2026-04-03 | On Android 9, call handling uses `CallScreeningService` without `RoleManager`; setup UI must guide the user to system call-screening/caller-ID settings instead of requesting a role directly. |
 | D-077 | 2026-04-03 | Because Android 9 disables cleartext traffic by default for apps targeting API 28+, the app must explicitly opt in so configured `http` endpoints are supported. |
 | D-078 | 2026-04-03 | For `https`, the app must trust only an app-bundled CA set derived from `nixpkgs` `cacert` and must not rely on the device system CA store. |
-| D-079 | 2026-04-04 | Heartbeat reliability is a priority. The current design uses `AlarmManager` as the primary 30-minute driver and a short-lived foreground service only to execute an immediate heartbeat attempt and rearm the next alarm. |
+| D-079 | 2026-04-04 | Heartbeat reliability is a priority. The current design uses `AlarmManager`, `WorkManager`, and a persistent foreground service as overlapping heartbeat supervision triggers, with one shared supervisor path responsible for repair and due-slot execution. |
 | D-080 | 2026-04-04 | Outbound hostname resolution uses DoH with fixed provider fallback order `Cloudflare -> Google -> Quad9`, with both IPv4 and IPv6 bootstrap addresses per provider and app-log entries when a DoH provider fails. |
 | D-081 | 2026-04-04 | Logs are retained for 6 months and trimmed automatically during the first heartbeat execution of each UTC day. |
 | D-082 | 2026-04-04 | Heartbeat HTTP sends are deduplicated by persisted last-attempt state, and recurring-heartbeat setup must cancel legacy `HeartbeatWorker` WorkManager state from older app versions. |
 | D-083 | 2026-04-04 | Heartbeat tracing logs must explain why the service woke, why a heartbeat was sent or skipped, and what recovery alarm timing was already present or newly scheduled. |
-| D-084 | 2026-04-04 | Natural app wake paths such as boot, config-save, UI resume, SMS handling, and call handling repair missing/stale heartbeat alarms; if heartbeat is already due, they may trigger immediate one-shot heartbeat execution. |
+| D-084 | 2026-04-04 | Natural app wake paths such as boot, config-save, UI resume, SMS handling, and call handling enter the same heartbeat supervisor path used by alarms, workers, and the foreground service. |

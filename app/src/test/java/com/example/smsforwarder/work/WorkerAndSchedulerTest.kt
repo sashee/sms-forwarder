@@ -147,12 +147,11 @@ class WorkerAndSchedulerTest {
         worker.doWork()
 
         assertTrue(container.sender.requests.isEmpty())
-        assertNotNull(container.configRepository.getHeartbeatLastAttemptAt())
+        assertEquals(null, container.configRepository.getHeartbeatLastAttemptAt())
         assertEquals(null, container.configRepository.getHeartbeatLastSuccessAt())
         assertTrue(
-            container.eventRepository.observeLogs().first().first().text.contains("now=") &&
-                container.eventRepository.observeLogs().first().first().text.contains("+") &&
-                container.eventRepository.observeLogs().first().first().text.startsWith("Heartbeat skipped because URL is empty"),
+            container.eventRepository.observeLogs().first().first().text ==
+                "Heartbeat supervisor via worker disabled heartbeat infrastructure because URL is empty",
         )
     }
 
@@ -244,7 +243,9 @@ class WorkerAndSchedulerTest {
         assertTrue(container.sender.requests.isEmpty())
         assertNotNull(container.configRepository.getHeartbeatLastAttemptAt())
         assertTrue(
-            container.eventRepository.observeLogs().first().first().text.startsWith("Heartbeat skipped while fault state is active"),
+            container.eventRepository.observeLogs().first().any {
+                it.text.startsWith("Heartbeat skipped while fault state is active")
+            },
         )
     }
 
@@ -267,8 +268,7 @@ class WorkerAndSchedulerTest {
         assertEquals(config, container.configRepository.getConfig())
         assertNotNull(container.configRepository.getHeartbeatLastAttemptAt())
         val logs = container.eventRepository.observeLogs().first()
-        assertEquals(1, logs.size)
-        assertTrue(logs.first().text.contains("Database reset"))
+        assertTrue(logs.any { it.text.contains("Database reset") })
     }
 
     @Test
@@ -379,6 +379,7 @@ class WorkerAndSchedulerTest {
     @Suppress("DEPRECATION")
     fun eventSchedulerStartsImmediateHeartbeatWhenOverdueAndEnqueuesDeliveryWork() = runBlockingTest {
         val context = ApplicationProvider.getApplicationContext<TestSmsForwarderApp>()
+        testAppContainer().configRepository.saveConfig(AppConfig(heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb")))
         val database = testAppContainer().database
         val workManager = WorkManager.getInstance(context)
         val scheduler = EventScheduler(context, workManager, database.queueDao())
@@ -394,7 +395,7 @@ class WorkerAndSchedulerTest {
         assertEquals(HeartbeatForegroundService::class.java.name, startedService.component!!.className)
         assertTrue(
             testAppContainer().eventRepository.observeLogs().first().any {
-                it.text.startsWith("Heartbeat immediate execution requested via scheduler")
+                it.text.startsWith("Heartbeat supervisor via scheduler is running due heartbeat")
             },
         )
 
@@ -417,6 +418,7 @@ class WorkerAndSchedulerTest {
     @Suppress("DEPRECATION")
     fun eventSchedulerSchedulesAlarmWithoutImmediateStartWhenHeartbeatNotDue() = runBlockingTest {
         val context = ApplicationProvider.getApplicationContext<TestSmsForwarderApp>()
+        testAppContainer().configRepository.saveConfig(AppConfig(heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb")))
         val database = testAppContainer().database
         val workManager = WorkManager.getInstance(context)
         val scheduler = EventScheduler(context, workManager, database.queueDao())
@@ -428,7 +430,7 @@ class WorkerAndSchedulerTest {
         val scheduledAlarm = requireNotNull(shadowOf(alarmManager).nextScheduledAlarm)
         assertTrue(scheduledAlarm.triggerAtTime >= System.currentTimeMillis() + HeartbeatRunner.INTERVAL_MILLIS - 5_000L)
         assertTrue(testAppContainer().configRepository.getHeartbeatAlarmScheduledAt() != null)
-        assertEquals(null, shadowOf(context as Application).nextStartedService)
+        assertEquals(HeartbeatForegroundService::class.java.name, shadowOf(context as Application).nextStartedService.component!!.className)
         assertTrue(
             testAppContainer().eventRepository.observeLogs().first().any {
                 it.text.startsWith("Heartbeat recovery alarm scheduled for ") && it.text.contains("+")
@@ -475,9 +477,10 @@ class WorkerAndSchedulerTest {
     }
 
     @Test
-    fun heartbeatAlarmReceiverStartsServiceAndLogs() = runBlocking {
+    fun heartbeatAlarmReceiverRunsSupervisorAndLogs() = runBlocking {
         val container = testAppContainer()
         val receiver = HeartbeatAlarmReceiver()
+        container.configRepository.saveConfig(AppConfig(heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb")))
         container.configRepository.setHeartbeatAlarmScheduledAt(123L)
 
         receiver.onReceive(
@@ -486,8 +489,9 @@ class WorkerAndSchedulerTest {
         )
 
         waitFor { container.scheduler.heartbeatServiceStartCount == 1 }
+        waitFor { runBlocking { container.configRepository.getHeartbeatAlarmScheduledAt() != null } }
         assertEquals(1, container.scheduler.heartbeatServiceStartCount)
-        assertEquals(null, container.configRepository.getHeartbeatAlarmScheduledAt())
+        assertTrue(container.configRepository.getHeartbeatAlarmScheduledAt() != null)
         assertTrue(
             container.eventRepository.observeLogs().first().any {
                 it.text == "Heartbeat recovery alarm fired (previously scheduled for 1970-01-01T01:00:00.123+01:00 (123))"
@@ -522,7 +526,7 @@ class WorkerAndSchedulerTest {
             waitFor {
                 runBlocking {
                     container.eventRepository.observeLogs().first().any {
-                        it.text == "Heartbeat execution starting via test"
+                        it.text.startsWith("Heartbeat supervision finished via test; nextDueAt=")
                     }
                 }
             }
@@ -532,9 +536,8 @@ class WorkerAndSchedulerTest {
             assertTrue(container.scheduler.heartbeatAlarmTimes.isNotEmpty())
             val logs = container.eventRepository.observeLogs().first().map { it.text }
             assertTrue(logs.any { it.contains("Heartbeat service start requested via test") && it.contains("executionActive=false") })
-            assertTrue(logs.any { it == "Heartbeat execution starting via test" })
             assertTrue(logs.any { it.startsWith("Heartbeat completed with HTTP 200") })
-            assertTrue(logs.any { it.startsWith("Heartbeat execution finished via test; nextDueAt=") && it.contains("+") })
+            assertTrue(logs.any { it.startsWith("Heartbeat supervision finished via test; nextDueAt=") && it.contains("+") })
             serviceController.destroy()
         }
     }
@@ -560,7 +563,7 @@ class WorkerAndSchedulerTest {
             assertTrue(container.scheduler.heartbeatAlarmTimes.last() >= lastAttemptAt + HeartbeatRunner.INTERVAL_MILLIS - 5_000L)
             assertTrue(
                 container.eventRepository.observeLogs().first().any {
-                    it.text.startsWith("Heartbeat skipped because next slot is not due yet")
+                    it.text.startsWith("Heartbeat supervisor via service:recent did not run heartbeat immediately")
                 },
             )
             serviceController.destroy()
@@ -584,14 +587,14 @@ class WorkerAndSchedulerTest {
             waitFor {
                 runBlocking {
                     container.eventRepository.observeLogs().first().any {
-                        it.text.startsWith("Heartbeat alarm repair requested via service:repair (missing)")
+                        it.text.startsWith("Heartbeat alarm repair requested via supervisor:service:repair (missing)")
                     }
                 }
             }
             assertNotNull(container.configRepository.getHeartbeatAlarmScheduledAt())
             assertTrue(
                 container.eventRepository.observeLogs().first().any {
-                    it.text.startsWith("Heartbeat alarm repair requested via service:repair (missing)") &&
+                    it.text.startsWith("Heartbeat alarm repair requested via supervisor:service:repair (missing)") &&
                         it.text.contains("scheduledAt=none") &&
                         it.text.contains("nextDueAt=") &&
                         it.text.contains("+")
@@ -626,7 +629,7 @@ class WorkerAndSchedulerTest {
                 }
             }
             assertTrue(container.sender.requests.isEmpty())
-            assertTrue(container.eventRepository.observeLogs().first().any { it.text == "Heartbeat execution already active; start request via alarm did not restart it" })
+            assertTrue(container.eventRepository.observeLogs().first().any { it.text == "Heartbeat supervision already active; start request via alarm did not restart it" })
             activeJob.cancel()
             serviceController.destroy()
         }

@@ -7,14 +7,17 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.example.smsforwarder.data.QueueDao
 import com.example.smsforwarder.heartbeat.HeartbeatAlarmReceiver
 import com.example.smsforwarder.heartbeat.HeartbeatForegroundService
 import com.example.smsforwarder.heartbeat.HeartbeatRunner
+import com.example.smsforwarder.heartbeat.HeartbeatSupervisor
 import com.example.smsforwarder.util.TimeFormatter
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.TimeUnit
@@ -30,7 +33,6 @@ open class EventScheduler(
         val isMissing: Boolean,
         val isStale: Boolean,
         val isTooFarAhead: Boolean,
-        val shouldStartImmediately: Boolean,
     )
 
     private val alarmManager: AlarmManager by lazy {
@@ -44,6 +46,22 @@ open class EventScheduler(
 
     open fun cancelLegacyHeartbeatWork() {
         workManager.cancelAllWorkByTag(HeartbeatWorker::class.java.name)
+    }
+
+    open fun ensureHeartbeatWatchdogWork() {
+        val request = PeriodicWorkRequestBuilder<HeartbeatWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(networkConstraints())
+            .addTag(HeartbeatWorker::class.java.name)
+            .build()
+        workManager.enqueueUniquePeriodicWork(
+            HEARTBEAT_WATCHDOG_WORK_NAME,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            request,
+        )
+    }
+
+    open fun cancelHeartbeatWatchdogWork() {
+        workManager.cancelUniqueWork(HEARTBEAT_WATCHDOG_WORK_NAME)
     }
 
     open fun enqueueDelivery(eventId: Long, delayMillis: Long = 0) {
@@ -73,39 +91,44 @@ open class EventScheduler(
         )
     }
 
+    open fun stopHeartbeatService() {
+        context.stopService(HeartbeatForegroundService.createStartIntent(context, "stop"))
+    }
+
     open fun ensureHeartbeatScheduled(reason: String, startServiceIfOverdue: Boolean) {
         runBlocking {
             val appContainer = (context.applicationContext as com.example.smsforwarder.SmsForwarderApp).appContainer
-            val now = System.currentTimeMillis()
-            val state = heartbeatAlarmState(appContainer, now, startServiceIfOverdue)
-
-            if ((state.isMissing || state.isStale || state.isTooFarAhead) && !state.shouldStartImmediately) {
-                scheduleHeartbeatRecoveryAlarm(state.nextDueAt)
-                val status = when {
-                    state.isMissing -> "missing"
-                    state.isStale -> "stale"
-                    else -> "misaligned"
-                }
-                appContainer.eventRepository.addLog(
-                    "Heartbeat alarm repair requested via $reason ($status) with scheduledAt=${TimeFormatter.toDebugLocal(state.scheduledAt)} nextDueAt=${TimeFormatter.toDebugLocal(state.nextDueAt)}",
-                )
-            } else if (state.isMissing || state.isStale || state.isTooFarAhead) {
-                appContainer.eventRepository.addLog(
-                    "Heartbeat alarm repair via $reason deferred to immediate execution with scheduledAt=${TimeFormatter.toDebugLocal(state.scheduledAt)} nextDueAt=${TimeFormatter.toDebugLocal(state.nextDueAt)}",
-                )
-            } else {
-                appContainer.eventRepository.addLog(
-                    "Heartbeat alarm check via $reason found scheduledAt=${TimeFormatter.toDebugLocal(state.scheduledAt)} nextDueAt=${TimeFormatter.toDebugLocal(state.nextDueAt)}",
-                )
-            }
-
-            if (state.shouldStartImmediately) {
-                appContainer.eventRepository.addLog(
-                    "Heartbeat immediate execution requested via $reason for nextDueAt=${TimeFormatter.toDebugLocal(state.nextDueAt)}",
-                )
-                startHeartbeatService(reason)
-            }
+            HeartbeatSupervisor.run(
+                appContainer = appContainer,
+                scheduler = this@EventScheduler,
+                reason = reason,
+                ensureService = true,
+                allowImmediateHeartbeat = startServiceIfOverdue,
+            )
         }
+    }
+
+    open suspend fun ensureHeartbeatAlarmScheduled(reason: String, now: Long): Long {
+        val appContainer = (context.applicationContext as com.example.smsforwarder.SmsForwarderApp).appContainer
+        val state = heartbeatAlarmState(appContainer, now)
+
+        if (state.isMissing || state.isStale || state.isTooFarAhead) {
+            scheduleHeartbeatRecoveryAlarm(state.nextDueAt)
+            val status = when {
+                state.isMissing -> "missing"
+                state.isStale -> "stale"
+                else -> "misaligned"
+            }
+            appContainer.eventRepository.addLog(
+                "Heartbeat alarm repair requested via $reason ($status) with scheduledAt=${TimeFormatter.toDebugLocal(state.scheduledAt)} nextDueAt=${TimeFormatter.toDebugLocal(state.nextDueAt)}",
+            )
+        } else {
+            appContainer.eventRepository.addLog(
+                "Heartbeat alarm check via $reason found scheduledAt=${TimeFormatter.toDebugLocal(state.scheduledAt)} nextDueAt=${TimeFormatter.toDebugLocal(state.nextDueAt)}",
+            )
+        }
+
+        return state.nextDueAt
     }
 
     open fun scheduleHeartbeatRecoveryAlarm(triggerAtMillis: Long) {
@@ -131,6 +154,14 @@ open class EventScheduler(
         }
     }
 
+    open fun cancelHeartbeatAlarm() {
+        alarmManager.cancel(heartbeatAlarmIntent())
+        runBlocking {
+            val appContainer = (context.applicationContext as com.example.smsforwarder.SmsForwarderApp).appContainer
+            appContainer.configRepository.clearHeartbeatAlarmScheduledAt()
+        }
+    }
+
     private fun networkConstraints(): Constraints = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .build()
@@ -144,10 +175,13 @@ open class EventScheduler(
 
     private fun deliveryWorkName(eventId: Long): String = "deliver-event-$eventId"
 
+    companion object {
+        private const val HEARTBEAT_WATCHDOG_WORK_NAME = "heartbeat-watchdog"
+    }
+
     private suspend fun heartbeatAlarmState(
         appContainer: com.example.smsforwarder.AppContainer,
         now: Long,
-        startServiceIfOverdue: Boolean,
     ): HeartbeatAlarmState {
         val nextDueAt = HeartbeatRunner.nextDueAt(appContainer, now)
         val scheduledAt = appContainer.configRepository.getHeartbeatAlarmScheduledAt()
@@ -160,7 +194,6 @@ open class EventScheduler(
             isMissing = isMissing,
             isStale = isStale,
             isTooFarAhead = isTooFarAhead,
-            shouldStartImmediately = startServiceIfOverdue && now >= nextDueAt,
         )
     }
 }

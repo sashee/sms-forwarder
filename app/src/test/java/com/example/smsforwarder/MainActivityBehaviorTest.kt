@@ -156,12 +156,12 @@ class MainActivityBehaviorTest {
         }
         waitFor {
             shadowOf(Looper.getMainLooper()).idle()
-            runBlocking { container.eventRepository.observeLogs().first().firstOrNull()?.text == "Configuration saved" }
+            runBlocking { container.eventRepository.observeLogs().first().any { it.text == "Configuration saved" } }
         }
 
         assertEquals(1, container.scheduler.heartbeatScheduledCount)
         assertTrue(container.scheduler.heartbeatRepairCount >= 2)
-        assertEquals("Configuration saved", container.eventRepository.observeLogs().first().first().text)
+        assertTrue(container.eventRepository.observeLogs().first().any { it.text == "Configuration saved" })
     }
 
     @Test

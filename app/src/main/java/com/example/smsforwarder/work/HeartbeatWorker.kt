@@ -5,7 +5,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.smsforwarder.AppContainer
 import com.example.smsforwarder.SmsForwarderApp
-import com.example.smsforwarder.heartbeat.HeartbeatRunner
+import com.example.smsforwarder.heartbeat.HeartbeatSupervisor
 
 class HeartbeatWorker(
     appContext: Context,
@@ -20,7 +20,12 @@ class HeartbeatWorker(
     )
 
     override suspend fun doWork(): Result {
-        HeartbeatRunner.runHeartbeatSlot(appContainer)
+        HeartbeatSupervisor.run(
+            appContainer = appContainer,
+            reason = "worker",
+            ensureService = true,
+            allowImmediateHeartbeat = true,
+        )
         return Result.success()
     }
 }

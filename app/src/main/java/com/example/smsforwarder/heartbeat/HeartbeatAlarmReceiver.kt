@@ -24,7 +24,12 @@ class HeartbeatAlarmReceiver : BroadcastReceiver() {
                 appContainer.eventRepository.addLog(
                     "Heartbeat recovery alarm fired (previously scheduled for ${TimeFormatter.toDebugLocal(scheduledAt)})",
                 )
-                appContainer.scheduler.startHeartbeatService("alarm")
+                HeartbeatSupervisor.run(
+                    appContainer = appContainer,
+                    reason = "alarm",
+                    ensureService = true,
+                    allowImmediateHeartbeat = true,
+                )
             } finally {
                 pendingResult?.finish()
             }

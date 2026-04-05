@@ -17,6 +17,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class HeartbeatForegroundService : Service() {
@@ -24,6 +25,8 @@ class HeartbeatForegroundService : Service() {
     private val appContainer by lazy { (applicationContext as SmsForwarderApp).appContainer }
     @Volatile
     private var executionJob: kotlinx.coroutines.Job? = null
+    @Volatile
+    private var loopJob: kotlinx.coroutines.Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -34,64 +37,99 @@ class HeartbeatForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val reason = intent?.getStringExtra(EXTRA_START_REASON).orEmpty().ifBlank { "scheduler" }
         val isExecutionActive = executionJob?.isActive == true
+        val isLoopActive = loopJob?.isActive == true
         serviceScope.launch {
             val now = System.currentTimeMillis()
             appContainer.configRepository.setHeartbeatServiceSeenAt(now)
             appContainer.eventRepository.addLog(
-                "Heartbeat service start requested via $reason (startId=$startId, executionActive=$isExecutionActive, now=${TimeFormatter.toDebugLocal(now)})",
+                "Heartbeat service start requested via $reason (startId=$startId, executionActive=$isExecutionActive, loopActive=$isLoopActive, now=${TimeFormatter.toDebugLocal(now)})",
             )
         }
         if (!isExecutionActive) {
-            startExecution(reason, startId)
+            startExecution(reason)
         } else {
             serviceScope.launch {
                 appContainer.eventRepository.addLog(
-                    "Heartbeat execution already active; start request via $reason did not restart it",
+                    "Heartbeat supervision already active; start request via $reason did not restart it",
                 )
             }
         }
-        return START_NOT_STICKY
+        if (!isLoopActive) {
+            startLoop()
+        }
+        return START_STICKY
     }
 
     override fun onDestroy() {
         executionJob = null
+        loopJob = null
         serviceScope.cancel()
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun startExecution(reason: String, startId: Int) {
+    private fun startExecution(reason: String) {
         var startedJob: kotlinx.coroutines.Job? = null
         val job = serviceScope.launch {
-            appContainer.eventRepository.addLog("Heartbeat execution starting via $reason")
+            appContainer.eventRepository.addLog("Heartbeat supervision starting via $reason")
             try {
                 val now = System.currentTimeMillis()
                 appContainer.configRepository.setHeartbeatServiceSeenAt(now)
-                HeartbeatRunner.runHeartbeatSlot(appContainer, now)
+                HeartbeatSupervisor.run(
+                    appContainer = appContainer,
+                    reason = "service:$reason",
+                    ensureService = false,
+                    allowImmediateHeartbeat = true,
+                    now = now,
+                )
                 val nextDueAt = HeartbeatRunner.nextDueAt(appContainer, System.currentTimeMillis())
                 appContainer.eventRepository.addLog(
-                    "Heartbeat execution finished via $reason; nextDueAt=${TimeFormatter.toDebugLocal(nextDueAt)}",
+                    "Heartbeat supervision finished via $reason; nextDueAt=${TimeFormatter.toDebugLocal(nextDueAt)}",
                 )
-                appContainer.scheduler.ensureHeartbeatScheduled("service:$reason", startServiceIfOverdue = false)
             } catch (error: CancellationException) {
-                appContainer.eventRepository.addLog("Heartbeat execution cancelled")
+                appContainer.eventRepository.addLog("Heartbeat supervision cancelled")
                 throw error
             } catch (error: Exception) {
                 appContainer.eventRepository.addLog(
-                    "Heartbeat execution failed: ${error.message ?: error::class.java.simpleName}",
+                    "Heartbeat supervision failed: ${error.message ?: error::class.java.simpleName}",
                 )
                 throw error
             } finally {
                 if (executionJob === startedJob) {
                     executionJob = null
                 }
-                appContainer.eventRepository.addLog("Heartbeat execution no longer active")
-                stopSelfResult(startId)
+                appContainer.eventRepository.addLog("Heartbeat supervision execution no longer active")
             }
         }
         startedJob = job
         executionJob = job
+    }
+
+    private fun startLoop() {
+        var startedJob: kotlinx.coroutines.Job? = null
+        val job = serviceScope.launch {
+            try {
+                while (true) {
+                    delay(HeartbeatSupervisor.SERVICE_CHECK_INTERVAL_MILLIS)
+                    val now = System.currentTimeMillis()
+                    appContainer.configRepository.setHeartbeatServiceSeenAt(now)
+                    HeartbeatSupervisor.run(
+                        appContainer = appContainer,
+                        reason = "service:loop",
+                        ensureService = false,
+                        allowImmediateHeartbeat = true,
+                        now = now,
+                    )
+                }
+            } finally {
+                if (loopJob === startedJob) {
+                    loopJob = null
+                }
+            }
+        }
+        startedJob = job
+        loopJob = job
     }
 
     private fun ensureNotificationChannel() {

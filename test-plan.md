@@ -16,7 +16,7 @@ It excludes:
 - Cover Android entry points (`Activity`, `BroadcastReceiver`, `Service`, `Worker`).
 - Cover persistence, scheduling, and configuration behavior.
 - Cover failure handling and recovery behavior.
-- Cover the hybrid heartbeat reliability model: foreground service primary path plus `AlarmManager` recovery.
+- Cover the multi-trigger heartbeat reliability model: `AlarmManager`, `WorkManager`, and the foreground service all run the same supervision path.
 - Keep tests deterministic and independent of the local `robolectric/` source checkout.
 
 ## Test Categories
@@ -184,7 +184,7 @@ File target:
 - `app/src/main/java/com/example/smsforwarder/work/HeartbeatWorker.kt`
 
 Tests:
-- skips and logs when heartbeat URL is blank
+- disables heartbeat infrastructure and logs when heartbeat URL is blank
 - sends heartbeat once when config is present
 - skips and logs when a second heartbeat trigger arrives before the 30-minute interval is due
 - sends again once the 30-minute interval has elapsed
@@ -224,10 +224,11 @@ Tests:
 - reschedules queued events with remaining delay when in future
 - applies network-required constraints to delivery work
 - starts the heartbeat foreground service when recurring work is ensured
+- schedules periodic heartbeat watchdog work when recurring work is ensured
 - schedules a heartbeat recovery alarm for the next due time
 - cancels legacy `HeartbeatWorker` work tagged for older heartbeat scheduling before arming the current heartbeat path
 - logs the exact recovery-alarm trigger time when scheduling heartbeat recovery
-- repairs missing/stale heartbeat alarms from shared scheduler logic
+- repairs missing/stale heartbeat alarms from shared supervisor logic
 - starts immediate heartbeat execution when a wake path finds heartbeat already overdue
 
 ### HeartbeatForegroundService
@@ -239,8 +240,8 @@ Tests:
 - starts in the foreground with a persistent notification
 - records foreground-service-seen timestamp
 - sends heartbeat immediately when overdue or never attempted
-- does not keep an in-process delay loop alive between heartbeats
-- rearms the next recovery alarm after each one-shot execution
+- keeps a lightweight supervision loop alive between heartbeats
+- rechecks watchdog/alarm/service state during supervision passes
 - keeps using single-attempt heartbeat semantics via shared heartbeat execution logic
 - logs service start reason, execution state, send/skip reason, and next due time
 
@@ -251,10 +252,10 @@ File target:
 
 Tests:
 - ignores unrelated actions
-- starts the heartbeat foreground service for the app alarm action
+- enters the shared heartbeat supervisor path for the app alarm action
 - logs that the recovery alarm fired
 - logs the previously stored recovery-alarm timestamp when the alarm fires
-- leaves the next alarm to be rearmed by the one-shot heartbeat execution path
+- rearms the next alarm through the shared supervisor path
 
 ### BootReceiver
 
