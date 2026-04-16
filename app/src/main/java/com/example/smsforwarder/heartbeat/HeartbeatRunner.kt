@@ -3,6 +3,7 @@ package com.example.smsforwarder.heartbeat
 import com.example.smsforwarder.AppContainer
 import com.example.smsforwarder.net.HttpRequest
 import com.example.smsforwarder.util.TimeFormatter
+import com.example.smsforwarder.work.QueuedEventProcessor
 import java.time.Instant
 import java.time.ZoneOffset
 
@@ -25,6 +26,12 @@ object HeartbeatRunner {
             return false
         }
         trimLogsIfNeeded(appContainer, now)
+        val recoveredEventCount = QueuedEventProcessor.drainOlderThan(appContainer, INTERVAL_MILLIS, now)
+        if (recoveredEventCount > 0) {
+            appContainer.eventRepository.addLog(
+                "Heartbeat recovered $recoveredEventCount queued event(s) older than ${INTERVAL_MILLIS / 60_000L} minutes",
+            )
+        }
 
         val faultState = appContainer.configRepository.getFaultState()
         if (faultState != null) {

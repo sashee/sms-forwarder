@@ -140,10 +140,10 @@ Catastrophic fault mode:
 | D-020 | 2026-03-05 | UI includes a manual action to clear logs. |
 | D-021 | 2026-03-05 | Heartbeat delivery is single-attempt only; no retry scheduling for heartbeat failures. |
 | D-022 | 2026-03-05 | If heartbeat delivery fails, record it in logs and wait for the next 30-minute heartbeat slot. |
-| D-023 | 2026-03-05 | SMS and call deliveries use worker-based scheduling with retries. |
-| D-024 | 2026-03-05 | SMS and call retries continue indefinitely (no retry cutoff). |
-| D-025 | 2026-03-05 | SMS and call retry backoff remains exponential with a maximum delay of 1 day. |
-| D-026 | 2026-03-05 | Decisions `D-015`, `D-017`, and `D-018` are superseded by `D-024` and `D-025` for SMS/call retry behavior. |
+| D-023 | 2026-03-05 | SMS and call deliveries use worker-based scheduling with retries. Superseded by D-085. |
+| D-024 | 2026-03-05 | SMS and call retries continue indefinitely (no retry cutoff). Superseded by D-085. |
+| D-025 | 2026-03-05 | SMS and call retry backoff remains exponential with a maximum delay of 1 day. Superseded by D-085. |
+| D-026 | 2026-03-05 | Decisions `D-015`, `D-017`, and `D-018` are superseded by `D-024` and `D-025` for SMS/call retry behavior. Superseded by D-085. |
 | D-027 | 2026-03-05 | SMS permission scope is `RECEIVE_SMS` only for MVP; `READ_SMS` is out of scope. |
 | D-028 | 2026-03-05 | Call detection/rejection uses Android call screening role; UI includes a button to request this role. |
 | D-029 | 2026-03-05 | UI includes a button to request SMS permission (`RECEIVE_SMS`). |
@@ -202,3 +202,4 @@ Catastrophic fault mode:
 | D-082 | 2026-04-04 | Heartbeat HTTP sends are deduplicated by persisted last-attempt state, and recurring-heartbeat setup must cancel legacy `HeartbeatWorker` WorkManager state from older app versions. |
 | D-083 | 2026-04-04 | Heartbeat tracing logs must explain why the service woke, why a heartbeat was sent or skipped, and what recovery alarm timing was already present or newly scheduled. |
 | D-084 | 2026-04-04 | Natural app wake paths such as boot, config-save, UI resume, SMS handling, and call handling enter the same heartbeat supervisor path used by alarms, workers, and the foreground service. |
+| D-085 | 2026-04-16 | SMS/call handling writes each event to `queued_events`, attempts delivery immediately in the handler, deletes the queue row on success, drains all queued events on boot, and lets heartbeat recover queued events older than one heartbeat period. |

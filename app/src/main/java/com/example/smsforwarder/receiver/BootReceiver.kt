@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.example.smsforwarder.SmsForwarderApp
+import com.example.smsforwarder.work.QueuedEventProcessor
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -14,13 +15,19 @@ class BootReceiver : BroadcastReceiver() {
             return
         }
 
+        val pendingResult = goAsync()
         val appContainer = (context.applicationContext as SmsForwarderApp).appContainer
         CoroutineScope(Dispatchers.IO).launch {
-            appContainer.configRepository.clearHeartbeatServiceSeenState()
-            appContainer.configRepository.clearHeartbeatAlarmScheduledState()
-            appContainer.scheduler.ensureRecurringWork()
-            appContainer.eventRepository.addLog("Boot completed; rescheduling work")
-            appContainer.scheduler.rescheduleQueuedEvents()
+            try {
+                appContainer.configRepository.clearHeartbeatServiceSeenState()
+                appContainer.configRepository.clearHeartbeatAlarmScheduledState()
+                appContainer.eventRepository.addLog("Boot completed; draining queued events")
+                val deliveredCount = QueuedEventProcessor.drainAll(appContainer)
+                appContainer.eventRepository.addLog("Boot drain processed $deliveredCount queued event(s)")
+                appContainer.scheduler.ensureRecurringWork()
+            } finally {
+                pendingResult?.finish()
+            }
         }
     }
 }

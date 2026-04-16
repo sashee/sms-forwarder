@@ -115,8 +115,9 @@ class WorkerAndSchedulerTest {
 
         val queued = container.eventRepository.getQueuedEvent(eventId)!!
         assertEquals(1, queued.attemptCount)
-        assertEquals(listOf(eventId to EventDeliveryWorker.retryDelayMillisForAttempt(1)), container.scheduler.enqueuedDeliveries)
-        assertTrue(container.eventRepository.observeLogs().first().first().text.contains("Retry scheduled"))
+        assertTrue(queued.nextAttemptAt >= System.currentTimeMillis() + HeartbeatRunner.INTERVAL_MILLIS - 5_000L)
+        assertTrue(container.scheduler.enqueuedDeliveries.isEmpty())
+        assertTrue(container.eventRepository.observeLogs().first().first().text.contains("remains pending until heartbeat retry"))
     }
 
     @Test
@@ -137,6 +138,7 @@ class WorkerAndSchedulerTest {
         assertEquals(1, queued.attemptCount)
         assertEquals(null, container.configRepository.getFaultState())
         assertTrue(container.eventRepository.observeLogs().first().first().text.contains("boom"))
+        assertTrue(container.scheduler.enqueuedDeliveries.isEmpty())
     }
 
     @Test
@@ -434,6 +436,44 @@ class WorkerAndSchedulerTest {
         assertTrue(
             testAppContainer().eventRepository.observeLogs().first().any {
                 it.text.startsWith("Heartbeat recovery alarm scheduled for ") && it.text.contains("+")
+            },
+        )
+    }
+
+    @Test
+    fun heartbeatRunnerOnlyRecoversQueuedEventsOlderThanOneInterval() = runBlockingTest {
+        val container = testAppContainer()
+        val now = Instant.parse("2026-04-04T12:00:00Z").toEpochMilli()
+        container.configRepository.saveConfig(AppConfig(heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb")))
+        container.eventRepository.enqueueSms("+1555", "old", now - HeartbeatRunner.INTERVAL_MILLIS - 1_000L)
+        container.eventRepository.enqueueSms("+1666", "fresh", now - 1_000L)
+
+        HeartbeatRunner.runHeartbeatSlot(container, now)
+
+        assertEquals(2, container.sender.requests.size)
+        assertEquals(1, container.eventRepository.allQueuedEvents().size)
+        assertEquals("fresh", container.eventRepository.allQueuedEvents().single().text)
+        assertTrue(
+            container.eventRepository.observeLogs().first().any {
+                it.text == "Heartbeat recovered 1 queued event(s) older than 30 minutes"
+            },
+        )
+    }
+
+    @Test
+    fun heartbeatRunnerDoesNotRecoverFreshQueuedEvents() = runBlockingTest {
+        val container = testAppContainer()
+        val now = Instant.parse("2026-04-04T12:00:00Z").toEpochMilli()
+        container.configRepository.saveConfig(AppConfig(heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb")))
+        container.eventRepository.enqueueSms("+1666", "fresh", now - 1_000L)
+
+        HeartbeatRunner.runHeartbeatSlot(container, now)
+
+        assertEquals(1, container.sender.requests.size)
+        assertEquals(1, container.eventRepository.allQueuedEvents().size)
+        assertTrue(
+            container.eventRepository.observeLogs().first().none {
+                it.text.startsWith("Heartbeat recovered ")
             },
         )
     }

@@ -5,7 +5,6 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.smsforwarder.AppContainer
 import com.example.smsforwarder.SmsForwarderApp
-import com.example.smsforwarder.net.HttpRequest
 
 class EventDeliveryWorker(
     appContext: Context,
@@ -24,51 +23,11 @@ class EventDeliveryWorker(
         if (eventId <= 0L) {
             return Result.failure()
         }
-
-        val event = appContainer.eventRepository.getQueuedEvent(eventId) ?: return Result.success()
-        return try {
-            val responseCode = appContainer.httpClient.send(
-                HttpRequest(
-                    url = event.url,
-                    method = event.method,
-                    contentType = event.contentType,
-                    body = event.body,
-                ),
-            )
-            if (responseCode in 200..299) {
-                appContainer.eventRepository.markDelivered(eventId)
-                appContainer.eventRepository.addLog("Delivered ${event.type} event ${event.eventId} with $responseCode")
-            } else {
-                scheduleRetry(eventId, event.attemptCount + 1, "HTTP $responseCode")
-            }
-            Result.success()
-        } catch (error: Exception) {
-            scheduleRetry(eventId, event.attemptCount + 1, error.message ?: error::class.java.simpleName)
-            Result.success()
-        }
-    }
-
-    private suspend fun scheduleRetry(eventId: Long, attemptCount: Int, reason: String) {
-        val delayMillis = retryDelayMillisForAttempt(attemptCount)
-        val nextAttemptAt = System.currentTimeMillis() + delayMillis
-        appContainer.eventRepository.scheduleRetry(eventId, attemptCount, nextAttemptAt)
-        appContainer.eventRepository.addLog("Retry scheduled for event $eventId in ${delayMillis / 1000}s: $reason")
-        appContainer.scheduler.enqueueDelivery(eventId, delayMillis)
+        QueuedEventProcessor.deliverNow(appContainer, eventId)
+        return Result.success()
     }
 
     companion object {
         const val KEY_EVENT_ID = "event_id"
-        private const val MAX_DELAY_MILLIS = 24L * 60L * 60L * 1000L
-
-        internal fun retryDelayMillisForAttempt(attemptCount: Int): Long {
-            var delayMillis = 15L * 60_000L
-            repeat((attemptCount - 1).coerceAtLeast(0)) {
-                if (delayMillis >= MAX_DELAY_MILLIS / 2L) {
-                    return MAX_DELAY_MILLIS
-                }
-                delayMillis *= 2L
-            }
-            return delayMillis
-        }
     }
 }

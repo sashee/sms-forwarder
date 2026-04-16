@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.example.smsforwarder.SmsForwarderApp
+import com.example.smsforwarder.work.QueuedEventProcessor
 
 class SmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -43,8 +44,8 @@ class SmsReceiver : BroadcastReceiver() {
                         text = smsMessage.text,
                         timestamp = smsMessage.timestamp,
                     )
-                    appContainer.scheduler.enqueueDelivery(id)
                     appContainer.eventRepository.addLog("Queued SMS event $id")
+                    QueuedEventProcessor.deliverNow(appContainer, id)
                 } catch (error: Exception) {
                     val timestamp = System.currentTimeMillis()
                     appContainer.configRepository.setFaultState(

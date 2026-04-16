@@ -1,6 +1,7 @@
 package com.example.smsforwarder.telecom
 
 import com.example.smsforwarder.AppContainer
+import com.example.smsforwarder.work.QueuedEventProcessor
 
 object CallEventHandler {
     enum class Source(val logLabel: String) {
@@ -15,8 +16,8 @@ object CallEventHandler {
                 Source.TELEPHONY -> appContainer.configRepository.setTelephonyCallSeenAt(timestamp)
             }
             val id = appContainer.eventRepository.enqueueCall(number, timestamp)
-            appContainer.scheduler.enqueueDelivery(id)
             appContainer.eventRepository.addLog("Queued call event $id via ${source.logLabel}")
+            QueuedEventProcessor.deliverNow(appContainer, id)
         } catch (error: Exception) {
             appContainer.configRepository.setFaultState(
                 reason = "Call enqueue failed: ${error.message ?: error::class.java.simpleName}",
