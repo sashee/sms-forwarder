@@ -28,6 +28,26 @@ class UiLogFormatterTest {
     }
 
     @Test
+    fun formatExportEmitsTabSeparatedIsoLinesPreservingOrderAndSanitizingNewlines() {
+        val original = TimeZone.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone("Europe/Berlin"))
+        try {
+            val formatted = UiLogFormatter.formatExport(
+                listOf(
+                    LogEntryEntity(id = 1, timestamp = 0L, text = "first"),
+                    LogEntryEntity(id = 2, timestamp = 1_500L, text = "second\nline\rmore"),
+                ),
+            )
+
+            val lines = formatted.lines()
+            assertEquals("1970-01-01T01:00:00+01:00\tfirst", lines[0])
+            assertEquals("1970-01-01T01:00:01.5+01:00\tsecond line more", lines[1])
+        } finally {
+            TimeZone.setDefault(original)
+        }
+    }
+
+    @Test
     fun replacesEmbeddedNewlinesInMessages() {
         val line = UiLogFormatter.formatLine(
             LogEntryEntity(id = 1, timestamp = 0L, text = "a\nb\rc"),

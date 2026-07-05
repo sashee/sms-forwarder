@@ -120,6 +120,15 @@ class EventRepositoryTest {
     }
 
     @Test
+    fun getAllLogsReturnsEveryRowOldestFirst() = runBlocking {
+        repository.addLog("second", 2L)
+        repository.addLog("first", 1L)
+        repository.addLog("third", 3L)
+
+        assertEquals(listOf("first", "second", "third"), repository.getAllLogs().map { it.text })
+    }
+
+    @Test
     fun addLogMirrorsMessageToLogcat() = runBlocking {
         repository.addLog("mirror me", 100L)
 

@@ -65,6 +65,16 @@ class DaoTest {
         assertEquals(emptyList<LogEntryEntity>(), logDao.observeLatest(10).first())
     }
 
+    @Test
+    fun logDaoGetAllReturnsEveryRowOldestFirst() = runBlocking {
+        val logDao = database.logDao()
+        logDao.insert(LogEntryEntity(timestamp = 3L, text = "three"))
+        logDao.insert(LogEntryEntity(timestamp = 1L, text = "one"))
+        logDao.insert(LogEntryEntity(timestamp = 2L, text = "two"))
+
+        assertEquals(listOf("one", "two", "three"), logDao.getAll().map { it.text })
+    }
+
     private fun baseEvent(
         nextAttemptAt: Long,
         eventId: String = "first",

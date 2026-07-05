@@ -85,6 +85,11 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <provider
+            android:name=".data.LogExportProvider"
+            android:authorities="com.example.smsforwarder.logs"
+            android:exported="true" />
+
     </application>
 
 </manifest>

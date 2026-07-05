@@ -20,6 +20,8 @@ open class EventRepository(
 
     open fun observeLogs(limit: Int = 300): Flow<List<LogEntryEntity>> = database.logDao().observeLatest(limit)
 
+    open suspend fun getAllLogs(): List<LogEntryEntity> = database.logDao().getAll()
+
     open suspend fun enqueueSms(number: String, text: String, timestamp: Long): Long {
         val config = configRepository.getConfig().sms
         return enqueueConfiguredEvent(EventType.SMS, config, number, text, timestamp)

@@ -14,6 +14,7 @@ import com.example.smsforwarder.receiver.SmsReceiver
 import com.example.smsforwarder.telecom.ForwardingCallScreeningService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -92,6 +93,15 @@ class ManifestAndResourceTest {
             isAccessible = true
         }.getInt(applicationInfo)
         assertEquals(R.xml.network_security_config, networkSecurityConfigRes)
+    }
+
+    @Test
+    fun manifestRegistersExportedLogProvider() {
+        val provider = packageManager.resolveContentProvider("com.example.smsforwarder.logs", 0)
+        assertNotNull(provider)
+        assertTrue(provider!!.name.endsWith("LogExportProvider"))
+        assertTrue(provider.exported)
+        assertNull(provider.readPermission)
     }
 
     @Test

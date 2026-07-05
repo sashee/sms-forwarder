@@ -13,6 +13,9 @@ interface LogDao {
     @Query("SELECT * FROM logs ORDER BY timestamp DESC LIMIT :limit")
     fun observeLatest(limit: Int): Flow<List<LogEntryEntity>>
 
+    @Query("SELECT * FROM logs ORDER BY timestamp ASC, id ASC")
+    suspend fun getAll(): List<LogEntryEntity>
+
     @Query("DELETE FROM logs")
     suspend fun deleteAll()
 

@@ -15,6 +15,13 @@ object UiLogFormatter {
         return rows(logs).joinToString("\n") { "${it.delta}  ${it.timestamp}  ${it.message}" }
     }
 
+    fun formatExport(logs: List<LogEntryEntity>): String {
+        return logs.joinToString("\n") {
+            val message = it.text.replace("\r", " ").replace("\n", " ")
+            "${TimeFormatter.toIsoLocal(it.timestamp)}\t$message"
+        }
+    }
+
     fun rows(logs: List<LogEntryEntity>): List<Row> {
         val orderedLogs = logs.sortedWith(compareByDescending<LogEntryEntity> { it.timestamp }.thenByDescending { it.id })
         return orderedLogs.mapIndexed { index, log ->
