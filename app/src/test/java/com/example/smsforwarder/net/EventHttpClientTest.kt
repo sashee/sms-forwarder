@@ -241,7 +241,10 @@ class EventHttpClientTest {
             assertEquals(202, code)
             assertEquals("hello", server.takeRequest().body.readUtf8())
             assertEquals(1, dohFailures.size)
-            assertTrue(dohFailures.single().contains("DoH lookup failed via Primary for sms.example: primary down"))
+            assertTrue(
+                dohFailures.single()
+                    .contains("DoH lookup failed via Primary for sms.example: UnknownHostException: primary down"),
+            )
         }
     }
 
@@ -308,6 +311,56 @@ class EventHttpClientTest {
     }
 
     @Test
+    fun logsDohFailureCauseChain() {
+        val dohFailures = mutableListOf<String>()
+        val client = EventHttpClient(
+            context = ApplicationProvider.getApplicationContext(),
+            onDohFailure = dohFailures::add,
+            dohEndpoints = listOf(
+                EventHttpClient.DohEndpoint("Cloudflare", "https://cloudflare-dns.com/dns-query", listOf("1.1.1.1")),
+            ),
+            dohDnsFactory = {
+                CausedDns(
+                    UnknownHostException("unreachable.example").apply {
+                        initCause(java.net.ConnectException("Network unreachable"))
+                    },
+                )
+            },
+        )
+
+        try {
+            client.send(
+                HttpRequest(
+                    url = "http://unreachable.example/test",
+                    method = "GET",
+                    contentType = "text/plain",
+                    body = "",
+                ),
+            )
+        } catch (error: Exception) {
+            val logged = dohFailures.single()
+            assertTrue(logged.contains("DoH lookup failed via Cloudflare for unreachable.example: "))
+            assertTrue(logged.contains("UnknownHostException: unreachable.example"))
+            assertTrue(logged.contains(" <- ConnectException: Network unreachable"))
+            return
+        }
+
+        error("Expected request to fail after the DoH provider failed")
+    }
+
+    @Test
+    fun describeThrowableRendersFullCauseChain() {
+        val error = UnknownHostException("host").apply {
+            initCause(java.net.ConnectException("Network unreachable"))
+        }
+
+        assertEquals(
+            "UnknownHostException: host <- ConnectException: Network unreachable",
+            EventHttpClient.describeThrowable(error),
+        )
+    }
+
+    @Test
     fun supportsIpv6BootstrapAndResolvedAddresses() {
         val dns = MappingDns(mapOf("localhost" to listOf("::1", "127.0.0.1")))
         val results = dns.lookup("localhost")
@@ -320,6 +373,12 @@ class EventHttpClientTest {
     private class ThrowingDns(private val message: String) : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
             throw UnknownHostException(message)
+        }
+    }
+
+    private class CausedDns(private val error: Exception) : Dns {
+        override fun lookup(hostname: String): List<InetAddress> {
+            throw error
         }
     }
 

@@ -176,7 +176,7 @@ open class EventHttpClient(
                 try {
                     return provider.dns.lookup(hostname)
                 } catch (error: Exception) {
-                    onFailure("DoH lookup failed via ${provider.name} for $hostname: ${error.message ?: error::class.java.simpleName}")
+                    onFailure("DoH lookup failed via ${provider.name} for $hostname: ${describeThrowable(error)}")
                     lastError = error
                 }
             }
@@ -196,6 +196,19 @@ open class EventHttpClient(
 
     companion object {
         private const val TAG = "EventHttpClient"
+
+        /**
+         * Renders a throwable and its full cause chain, e.g.
+         * `UnknownHostException: host <- ConnectException: Network unreachable`.
+         * OkHttp's [DnsOverHttps] throws an [UnknownHostException] whose message is only the hostname and
+         * tucks the real reason (connect refused, TLS failure, timeout, ...) into [Throwable.cause], so the
+         * chain is what actually explains a DoH failure. Cycle-safe via the [HashSet] guard.
+         */
+        internal fun describeThrowable(error: Throwable): String =
+            generateSequence(error) { it.cause }
+                .takeWhile(HashSet<Throwable>()::add)
+                .joinToString(" <- ") { "${it::class.java.simpleName}: ${it.message ?: "(no message)"}" }
+
         private val IPV4_LITERAL_REGEX = Regex("\\d{1,3}(\\.\\d{1,3}){3}")
         private val PEM_CERTIFICATE_REGEX = Regex(
             "-----BEGIN CERTIFICATE-----\\s.*?-----END CERTIFICATE-----",

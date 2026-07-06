@@ -234,6 +234,79 @@ class WorkerAndSchedulerTest {
     }
 
     @Test
+    fun heartbeatArmsFastRetryAfterFailure() = runBlocking {
+        val container = testAppContainer()
+        val now = Instant.parse("2026-04-04T12:00:00Z").toEpochMilli()
+        container.configRepository.saveConfig(AppConfig(heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb")))
+        container.sender.nextException = IllegalStateException("network down")
+
+        assertEquals(false, HeartbeatRunner.runHeartbeatSlot(container, now))
+
+        assertEquals(now + HeartbeatRunner.RETRY_BASE_DELAY_MILLIS, container.configRepository.getHeartbeatRetryAt())
+        assertEquals(1L, container.configRepository.getHeartbeatRetryCount())
+        // nextDueAt prefers the retry time so the alarm-repair path reschedules the wakeup to it.
+        assertEquals(now + HeartbeatRunner.RETRY_BASE_DELAY_MILLIS, HeartbeatRunner.nextDueAt(container, now))
+        assertTrue(container.eventRepository.observeLogs().first().any {
+            it.text == "Heartbeat will fast-retry in 60s (attempt 1/3)"
+        })
+    }
+
+    @Test
+    fun heartbeatFastRetriesBackOffThenExhaustBudget() = runBlocking {
+        val container = testAppContainer()
+        container.configRepository.saveConfig(AppConfig(heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb")))
+        container.sender.nextException = IllegalStateException("network down")
+
+        val t0 = Instant.parse("2026-04-04T12:00:00Z").toEpochMilli()
+        assertEquals(false, HeartbeatRunner.runHeartbeatSlot(container, t0))
+        assertEquals(1L, container.configRepository.getHeartbeatRetryCount())
+        assertEquals(t0 + 60_000L, container.configRepository.getHeartbeatRetryAt())
+
+        val t1 = t0 + 60_000L
+        assertEquals(false, HeartbeatRunner.runHeartbeatSlot(container, t1))
+        assertEquals(2L, container.configRepository.getHeartbeatRetryCount())
+        assertEquals(t1 + 120_000L, container.configRepository.getHeartbeatRetryAt())
+
+        val t2 = t1 + 120_000L
+        assertEquals(false, HeartbeatRunner.runHeartbeatSlot(container, t2))
+        assertEquals(3L, container.configRepository.getHeartbeatRetryCount())
+        assertEquals(t2 + 240_000L, container.configRepository.getHeartbeatRetryAt())
+
+        // Fourth consecutive failure exhausts the budget and falls back to the normal interval.
+        val t3 = t2 + 240_000L
+        assertEquals(false, HeartbeatRunner.runHeartbeatSlot(container, t3))
+        assertEquals(0L, container.configRepository.getHeartbeatRetryCount())
+        assertEquals(null, container.configRepository.getHeartbeatRetryAt())
+        assertEquals(t3 + HeartbeatRunner.INTERVAL_MILLIS, HeartbeatRunner.nextDueAt(container, t3))
+        assertTrue(container.eventRepository.observeLogs().first().any {
+            it.text == "Heartbeat exhausted 3 fast retries; waiting for next 30m slot"
+        })
+    }
+
+    @Test
+    fun heartbeatClearsRetryStateOnSuccessfulRetryAndLogsAttempt() = runBlocking {
+        val container = testAppContainer()
+        container.configRepository.saveConfig(AppConfig(heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb")))
+
+        val t0 = Instant.parse("2026-04-04T12:00:00Z").toEpochMilli()
+        container.sender.nextException = IllegalStateException("network down")
+        assertEquals(false, HeartbeatRunner.runHeartbeatSlot(container, t0))
+        assertEquals(1L, container.configRepository.getHeartbeatRetryCount())
+
+        // Network recovers before the retry fires.
+        container.sender.nextException = null
+        val t1 = t0 + HeartbeatRunner.RETRY_BASE_DELAY_MILLIS
+        assertTrue(HeartbeatRunner.runHeartbeatSlot(container, t1))
+
+        assertEquals(0L, container.configRepository.getHeartbeatRetryCount())
+        assertEquals(null, container.configRepository.getHeartbeatRetryAt())
+        assertEquals(2, container.sender.requests.size)
+        assertTrue(container.eventRepository.observeLogs().first().any {
+            it.text.startsWith("Heartbeat completed with HTTP 200 on fast-retry attempt 1/3")
+        })
+    }
+
+    @Test
     fun heartbeatWorkerSkipsWhenFaultStateIsRecent() = runBlocking {
         val container = testAppContainer()
         container.configRepository.saveConfig(AppConfig(heartbeat = EventConfig("http://heartbeat", "POST", "text/plain", "hb")))

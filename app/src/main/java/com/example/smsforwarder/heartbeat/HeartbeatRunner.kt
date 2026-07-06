@@ -11,7 +11,14 @@ object HeartbeatRunner {
     const val INTERVAL_MILLIS: Long = 30L * 60L * 1000L
     private const val RESET_AFTER_MILLIS = 24L * 60L * 60L * 1000L
 
+    // On a failed send, retry a few times over the next several minutes (60s, 120s, 240s) so a brief
+    // connectivity blackout does not cost a whole 30-minute slot. After the budget is spent we fall
+    // back to the normal interval.
+    const val RETRY_BASE_DELAY_MILLIS: Long = 60L * 1000L
+    const val MAX_FAST_RETRIES: Long = 3L
+
     suspend fun nextDueAt(appContainer: AppContainer, now: Long = System.currentTimeMillis()): Long {
+        appContainer.configRepository.getHeartbeatRetryAt()?.let { return it.coerceAtLeast(now) }
         val lastAttemptAt = appContainer.configRepository.getHeartbeatLastAttemptAt() ?: return now
         return (lastAttemptAt + INTERVAL_MILLIS).coerceAtLeast(now)
     }
@@ -65,13 +72,42 @@ object HeartbeatRunner {
                 ),
             )
             appContainer.configRepository.setHeartbeatLastSuccessAt(now)
-            appContainer.eventRepository.addLog("Heartbeat completed with HTTP $responseCode (now=${TimeFormatter.toDebugLocal(now)})")
+            val retriesUsed = appContainer.configRepository.getHeartbeatRetryCount()
+            val onRetry = if (retriesUsed > 0) " on fast-retry attempt $retriesUsed/$MAX_FAST_RETRIES" else ""
+            appContainer.eventRepository.addLog(
+                "Heartbeat completed with HTTP $responseCode$onRetry (now=${TimeFormatter.toDebugLocal(now)})",
+            )
+            appContainer.configRepository.clearHeartbeatRetryState()
             true
         } catch (error: Exception) {
             appContainer.eventRepository.addLog(
                 "Heartbeat failed (now=${TimeFormatter.toDebugLocal(now)}): ${error.message ?: error::class.java.simpleName}",
             )
+            scheduleFastRetry(appContainer, now)
             false
+        }
+    }
+
+    /**
+     * After a failed send, arm the next fast retry (until the budget is spent) so the alarm-repair
+     * path reschedules the wakeup to the retry time. Logs each decision so the retry burst is
+     * queryable: the preceding "Heartbeat failed" line records why, this line records how many.
+     */
+    private suspend fun scheduleFastRetry(appContainer: AppContainer, now: Long) {
+        val failures = appContainer.configRepository.getHeartbeatRetryCount()
+        if (failures < MAX_FAST_RETRIES) {
+            val attempt = failures + 1
+            val delay = RETRY_BASE_DELAY_MILLIS shl failures.toInt()
+            appContainer.configRepository.setHeartbeatRetryAt(now + delay)
+            appContainer.configRepository.setHeartbeatRetryCount(attempt)
+            appContainer.eventRepository.addLog(
+                "Heartbeat will fast-retry in ${delay / 1000L}s (attempt $attempt/$MAX_FAST_RETRIES)",
+            )
+        } else {
+            appContainer.configRepository.clearHeartbeatRetryState()
+            appContainer.eventRepository.addLog(
+                "Heartbeat exhausted $MAX_FAST_RETRIES fast retries; waiting for next ${INTERVAL_MILLIS / 60_000L}m slot",
+            )
         }
     }
 
