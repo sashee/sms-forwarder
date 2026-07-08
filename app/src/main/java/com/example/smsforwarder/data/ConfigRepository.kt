@@ -102,14 +102,6 @@ class ConfigRepository(private val context: Context) {
         preferences[longPreferencesKey("heartbeat.last_success_at")]
     }
 
-    val heartbeatRetryAtFlow: Flow<Long?> = context.dataStore.data.map { preferences ->
-        preferences[longPreferencesKey("heartbeat.retry_at")]
-    }
-
-    val heartbeatRetryCountFlow: Flow<Long?> = context.dataStore.data.map { preferences ->
-        preferences[longPreferencesKey("heartbeat.retry_count")]
-    }
-
     val heartbeatServiceSeenAtFlow: Flow<Long?> = context.dataStore.data.map { preferences ->
         preferences[longPreferencesKey("heartbeat.service_seen_at")]
     }
@@ -140,14 +132,9 @@ class ConfigRepository(private val context: Context) {
         var claimed = false
         context.dataStore.edit { preferences ->
             val lastAttemptAt = preferences[longPreferencesKey("heartbeat.last_attempt_at")]
-            val retryAt = preferences[longPreferencesKey("heartbeat.retry_at")]
-            val dueByInterval = lastAttemptAt == null || now >= lastAttemptAt + intervalMillis
-            val dueByRetry = retryAt != null && now >= retryAt
-            if (dueByInterval || dueByRetry) {
+            val isDue = lastAttemptAt == null || now >= lastAttemptAt + intervalMillis
+            if (isDue) {
                 preferences[longPreferencesKey("heartbeat.last_attempt_at")] = now
-                // Consume the retry slot; the burst counter (heartbeat.retry_count) persists until
-                // a success or the retry budget is exhausted.
-                preferences.remove(longPreferencesKey("heartbeat.retry_at"))
                 claimed = true
             }
         }
@@ -161,29 +148,6 @@ class ConfigRepository(private val context: Context) {
     }
 
     suspend fun getHeartbeatLastAttemptAt(): Long? = heartbeatLastAttemptAtFlow.firstValue()
-
-    suspend fun setHeartbeatRetryAt(timestamp: Long) {
-        context.dataStore.edit { preferences ->
-            preferences[longPreferencesKey("heartbeat.retry_at")] = timestamp
-        }
-    }
-
-    suspend fun getHeartbeatRetryAt(): Long? = heartbeatRetryAtFlow.firstValue()
-
-    suspend fun setHeartbeatRetryCount(count: Long) {
-        context.dataStore.edit { preferences ->
-            preferences[longPreferencesKey("heartbeat.retry_count")] = count
-        }
-    }
-
-    suspend fun getHeartbeatRetryCount(): Long = heartbeatRetryCountFlow.firstValue() ?: 0L
-
-    suspend fun clearHeartbeatRetryState() {
-        context.dataStore.edit { preferences ->
-            preferences.remove(longPreferencesKey("heartbeat.retry_at"))
-            preferences.remove(longPreferencesKey("heartbeat.retry_count"))
-        }
-    }
 
     suspend fun setHeartbeatLastSuccessAt(timestamp: Long) {
         context.dataStore.edit { preferences ->

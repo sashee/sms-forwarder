@@ -217,6 +217,7 @@ class EventHttpClientTest {
             val client = EventHttpClient(
                 context = ApplicationProvider.getApplicationContext(),
                 onDohFailure = dohFailures::add,
+                randomizeDohOrder = false,
                 dohEndpoints = listOf(
                     EventHttpClient.DohEndpoint("Primary", "https://primary.example/dns-query", listOf("1.1.1.1")),
                     EventHttpClient.DohEndpoint("Secondary", "https://secondary.example/dns-query", listOf("8.8.8.8")),
@@ -278,11 +279,45 @@ class EventHttpClientTest {
     }
 
     @Test
+    fun logsConnectionAddressFamilyAndResolver() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(200))
+            server.start()
+
+            val connections = mutableListOf<String>()
+            val client = EventHttpClient(
+                context = ApplicationProvider.getApplicationContext(),
+                onConnection = connections::add,
+                dohEndpoints = listOf(
+                    EventHttpClient.DohEndpoint("Primary", "https://primary.example/dns-query", listOf("1.1.1.1")),
+                ),
+                dohDnsFactory = { MappingDns(mapOf("sms.example" to listOf("127.0.0.1"))) },
+            )
+
+            val code = client.send(
+                HttpRequest(
+                    url = "http://sms.example:${server.port}/sms",
+                    method = "POST",
+                    contentType = "text/plain",
+                    body = "hi",
+                ),
+            )
+
+            assertEquals(200, code)
+            val message = connections.single()
+            assertTrue(message.contains("Connection to sms.example used 127.0.0.1 (IPv4)"))
+            assertTrue(message.contains("resolved by Primary"))
+            assertTrue(message.contains("-> [127.0.0.1]"))
+        }
+    }
+
+    @Test
     fun throwsWhenAllDohProvidersFail() {
         val dohFailures = mutableListOf<String>()
         val client = EventHttpClient(
             context = ApplicationProvider.getApplicationContext(),
             onDohFailure = dohFailures::add,
+            randomizeDohOrder = false,
             dohEndpoints = listOf(
                 EventHttpClient.DohEndpoint("Cloudflare", "https://cloudflare-dns.com/dns-query", listOf("1.1.1.1")),
                 EventHttpClient.DohEndpoint("Google", "https://dns.google/dns-query", listOf("8.8.8.8")),
@@ -304,6 +339,35 @@ class EventHttpClientTest {
             assertEquals(2, dohFailures.size)
             assertTrue(dohFailures.first().contains("Cloudflare unavailable"))
             assertTrue(dohFailures.last().contains("Google unavailable"))
+            return
+        }
+
+        error("Expected request to fail after all DoH providers failed")
+    }
+
+    @Test
+    fun triesEveryProviderWhenOrderIsRandomized() {
+        val dohFailures = mutableListOf<String>()
+        val client = EventHttpClient(
+            context = ApplicationProvider.getApplicationContext(),
+            onDohFailure = dohFailures::add,
+            randomizeDohOrder = true,
+            dohEndpoints = listOf(
+                EventHttpClient.DohEndpoint("Alpha", "https://alpha.example/dns-query", listOf("1.1.1.1")),
+                EventHttpClient.DohEndpoint("Bravo", "https://bravo.example/dns-query", listOf("8.8.8.8")),
+                EventHttpClient.DohEndpoint("Charlie", "https://charlie.example/dns-query", listOf("9.9.9.9")),
+            ),
+            dohDnsFactory = { endpoint -> ThrowingDns("${endpoint.name} unavailable") },
+        )
+
+        try {
+            client.send(HttpRequest("http://unreachable.example/test", "GET", "text/plain", ""))
+        } catch (error: Exception) {
+            // Regardless of the shuffled order, all three are attempted before giving up.
+            assertEquals(3, dohFailures.size)
+            assertTrue(dohFailures.any { it.contains("Alpha unavailable") })
+            assertTrue(dohFailures.any { it.contains("Bravo unavailable") })
+            assertTrue(dohFailures.any { it.contains("Charlie unavailable") })
             return
         }
 

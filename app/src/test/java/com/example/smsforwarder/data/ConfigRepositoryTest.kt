@@ -131,25 +131,4 @@ class ConfigRepositoryTest {
         assertTrue(repository.claimHeartbeatSlot(now = 1_801_000L, intervalMillis = 1_800_000L))
         assertEquals(1_801_000L, repository.getHeartbeatLastAttemptAt())
     }
-
-    @Test
-    fun claimHeartbeatSlotClaimsWhenRetryIsDueBeforeIntervalAndConsumesRetry() = runBlocking {
-        // A recent attempt would normally block a re-send for the full interval...
-        assertTrue(repository.claimHeartbeatSlot(now = 1_000L, intervalMillis = 1_800_000L))
-        assertFalse(repository.claimHeartbeatSlot(now = 61_000L, intervalMillis = 1_800_000L))
-
-        // ...but an armed retry makes the slot claimable once the retry time is reached.
-        repository.setHeartbeatRetryAt(61_000L)
-        repository.setHeartbeatRetryCount(1L)
-        assertTrue(repository.claimHeartbeatSlot(now = 61_000L, intervalMillis = 1_800_000L))
-        assertEquals(61_000L, repository.getHeartbeatLastAttemptAt())
-
-        // The retry time is consumed by the claim; the burst counter persists.
-        assertNull(repository.getHeartbeatRetryAt())
-        assertEquals(1L, repository.getHeartbeatRetryCount())
-
-        repository.clearHeartbeatRetryState()
-        assertNull(repository.getHeartbeatRetryAt())
-        assertEquals(0L, repository.getHeartbeatRetryCount())
-    }
 }

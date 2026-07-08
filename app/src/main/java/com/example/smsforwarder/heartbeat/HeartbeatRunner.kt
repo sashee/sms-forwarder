@@ -4,6 +4,7 @@ import com.example.smsforwarder.AppContainer
 import com.example.smsforwarder.net.HttpRequest
 import com.example.smsforwarder.util.TimeFormatter
 import com.example.smsforwarder.work.QueuedEventProcessor
+import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneOffset
 
@@ -11,19 +12,25 @@ object HeartbeatRunner {
     const val INTERVAL_MILLIS: Long = 30L * 60L * 1000L
     private const val RESET_AFTER_MILLIS = 24L * 60L * 60L * 1000L
 
-    // On a failed send, retry a few times over the next several minutes (60s, 120s, 240s) so a brief
-    // connectivity blackout does not cost a whole 30-minute slot. After the budget is spent we fall
-    // back to the normal interval.
-    const val RETRY_BASE_DELAY_MILLIS: Long = 60L * 1000L
-    const val MAX_FAST_RETRIES: Long = 3L
+    // On a failed send, retry a few times within the same wake window (holding a wakelock so the
+    // delays actually elapse) instead of losing the whole 30-minute slot to a brief blackout.
+    // Production defaults; `var` only so tests can drop the delay to 0 and avoid real waiting.
+    var maxFastRetries: Int = 3
+    var fastRetryDelayMillis: Long = 10L * 1000L
+    // Safety backstop for the wakelock: comfortably above the worst-case burst duration.
+    const val RETRY_WAKELOCK_TIMEOUT_MILLIS: Long = 90L * 1000L
 
     suspend fun nextDueAt(appContainer: AppContainer, now: Long = System.currentTimeMillis()): Long {
-        appContainer.configRepository.getHeartbeatRetryAt()?.let { return it.coerceAtLeast(now) }
         val lastAttemptAt = appContainer.configRepository.getHeartbeatLastAttemptAt() ?: return now
         return (lastAttemptAt + INTERVAL_MILLIS).coerceAtLeast(now)
     }
 
-    suspend fun runHeartbeatSlot(appContainer: AppContainer, now: Long = System.currentTimeMillis()): Boolean {
+    suspend fun runHeartbeatSlot(
+        appContainer: AppContainer,
+        now: Long = System.currentTimeMillis(),
+        maxRetries: Int = maxFastRetries,
+        retryDelayMillis: Long = fastRetryDelayMillis,
+    ): Boolean {
         val lastAttemptAt = appContainer.configRepository.getHeartbeatLastAttemptAt()
         val nextDueAt = lastAttemptAt?.plus(INTERVAL_MILLIS)?.coerceAtLeast(now) ?: now
         if (!appContainer.configRepository.claimHeartbeatSlot(now, INTERVAL_MILLIS)) {
@@ -59,55 +66,65 @@ object HeartbeatRunner {
             return false
         }
 
-        return try {
-            appContainer.eventRepository.addLog(
-                "Heartbeat sending (now=${TimeFormatter.toDebugLocal(now)}, method=${config.method}, url=${config.url})",
-            )
-            val responseCode = appContainer.httpClient.send(
-                HttpRequest(
-                    url = config.url,
-                    method = config.method,
-                    contentType = config.contentType,
-                    body = config.body,
-                ),
-            )
-            appContainer.configRepository.setHeartbeatLastSuccessAt(now)
-            val retriesUsed = appContainer.configRepository.getHeartbeatRetryCount()
-            val onRetry = if (retriesUsed > 0) " on fast-retry attempt $retriesUsed/$MAX_FAST_RETRIES" else ""
-            appContainer.eventRepository.addLog(
-                "Heartbeat completed with HTTP $responseCode$onRetry (now=${TimeFormatter.toDebugLocal(now)})",
-            )
-            appContainer.configRepository.clearHeartbeatRetryState()
-            true
-        } catch (error: Exception) {
-            appContainer.eventRepository.addLog(
-                "Heartbeat failed (now=${TimeFormatter.toDebugLocal(now)}): ${error.message ?: error::class.java.simpleName}",
-            )
-            scheduleFastRetry(appContainer, now)
-            false
+        // Hold a wakelock across the whole send + retry burst so the CPU stays awake and the retry
+        // delays actually elapse in this one wake window (a deferred alarm can't fire fast in Doze).
+        return appContainer.wakeGuard.withWakeLock("heartbeat", RETRY_WAKELOCK_TIMEOUT_MILLIS) {
+            sendWithRetries(appContainer, config, now, maxRetries, retryDelayMillis)
         }
     }
 
     /**
-     * After a failed send, arm the next fast retry (until the budget is spent) so the alarm-repair
-     * path reschedules the wakeup to the retry time. Logs each decision so the retry burst is
-     * queryable: the preceding "Heartbeat failed" line records why, this line records how many.
+     * Attempts the heartbeat send, retrying up to [maxRetries] times [retryDelayMillis] apart within the
+     * caller's wake window. Logs each step so the burst is queryable: the "Heartbeat failed" line records
+     * why (cause chain), the "will fast-retry" line records how many, and success records which attempt won.
      */
-    private suspend fun scheduleFastRetry(appContainer: AppContainer, now: Long) {
-        val failures = appContainer.configRepository.getHeartbeatRetryCount()
-        if (failures < MAX_FAST_RETRIES) {
-            val attempt = failures + 1
-            val delay = RETRY_BASE_DELAY_MILLIS shl failures.toInt()
-            appContainer.configRepository.setHeartbeatRetryAt(now + delay)
-            appContainer.configRepository.setHeartbeatRetryCount(attempt)
+    private suspend fun sendWithRetries(
+        appContainer: AppContainer,
+        config: com.example.smsforwarder.model.EventConfig,
+        now: Long,
+        maxRetries: Int,
+        retryDelayMillis: Long,
+    ): Boolean {
+        var attempt = 0
+        while (true) {
             appContainer.eventRepository.addLog(
-                "Heartbeat will fast-retry in ${delay / 1000L}s (attempt $attempt/$MAX_FAST_RETRIES)",
+                "Heartbeat sending (now=${TimeFormatter.toDebugLocal(now)}, method=${config.method}, url=${config.url})",
             )
-        } else {
-            appContainer.configRepository.clearHeartbeatRetryState()
+            val outcome = runCatching {
+                appContainer.httpClient.send(
+                    HttpRequest(
+                        url = config.url,
+                        method = config.method,
+                        contentType = config.contentType,
+                        body = config.body,
+                    ),
+                )
+            }
+            outcome.getOrNull()?.let { responseCode ->
+                appContainer.configRepository.setHeartbeatLastSuccessAt(now)
+                val onRetry = if (attempt > 0) " on fast-retry attempt $attempt/$maxRetries" else ""
+                appContainer.eventRepository.addLog(
+                    "Heartbeat completed with HTTP $responseCode$onRetry (now=${TimeFormatter.toDebugLocal(now)})",
+                )
+                return true
+            }
+
+            val error = outcome.exceptionOrNull()!!
+            val onRetry = if (attempt > 0) " (fast-retry attempt $attempt/$maxRetries)" else ""
             appContainer.eventRepository.addLog(
-                "Heartbeat exhausted $MAX_FAST_RETRIES fast retries; waiting for next ${INTERVAL_MILLIS / 60_000L}m slot",
+                "Heartbeat failed (now=${TimeFormatter.toDebugLocal(now)})$onRetry: ${error.message ?: error::class.java.simpleName}",
             )
+            if (attempt >= maxRetries) {
+                appContainer.eventRepository.addLog(
+                    "Heartbeat exhausted $maxRetries fast retries; waiting for next ${INTERVAL_MILLIS / 60_000L}m slot",
+                )
+                return false
+            }
+            attempt++
+            appContainer.eventRepository.addLog(
+                "Heartbeat will fast-retry in ${retryDelayMillis / 1000L}s (attempt $attempt/$maxRetries)",
+            )
+            delay(retryDelayMillis)
         }
     }
 

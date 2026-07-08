@@ -41,8 +41,15 @@ class RecordingHttpSender : HttpSender {
     var nextResponseCode: Int = 200
     var nextException: Exception? = null
 
+    // When > 0, the next N sends throw (then it succeeds). Used to exercise the fast-retry burst.
+    var failuresBeforeSuccess: Int = 0
+
     override fun send(request: HttpRequest): Int {
         requests += request
+        if (failuresBeforeSuccess > 0) {
+            failuresBeforeSuccess -= 1
+            throw nextException ?: IllegalStateException("simulated transient failure")
+        }
         nextException?.let { throw it }
         return nextResponseCode
     }
@@ -114,6 +121,8 @@ open class TestAppContainer(
     override val eventRepository: EventRepository by lazy {
         EventRepository(appContext, database, configRepository)
     }
+
+    override val wakeGuard: com.example.smsforwarder.util.WakeGuard = com.example.smsforwarder.util.NoopWakeGuard
 
     override val scheduler: RecordingScheduler by lazy {
         RecordingScheduler(appContext, database.queueDao())

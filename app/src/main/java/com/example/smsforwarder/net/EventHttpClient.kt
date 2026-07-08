@@ -6,7 +6,11 @@ import com.example.smsforwarder.R
 import java.io.BufferedInputStream
 import java.io.ByteArrayInputStream
 import java.io.InputStream
+import java.net.Inet4Address
+import java.net.Inet6Address
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Proxy
 import java.net.UnknownHostException
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
@@ -16,9 +20,12 @@ import java.security.cert.CertificateFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
+import okhttp3.Call
 import okhttp3.Dns
+import okhttp3.EventListener
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.dnsoverhttps.DnsOverHttps
@@ -40,12 +47,17 @@ open class EventHttpClient(
     private val trustAnchorResourceId: Int = R.raw.nixpkgs_cacert,
     private val trustAnchorOpener: (() -> InputStream)? = null,
     private val onDohFailure: ((String) -> Unit)? = null,
+    private val onConnection: ((String) -> Unit)? = null,
     private val dohEndpoints: List<DohEndpoint> = DEFAULT_DOH_ENDPOINTS,
     private val dohDnsFactory: ((DohEndpoint) -> Dns)? = null,
+    private val randomizeDohOrder: Boolean = true,
 ) : HttpSender {
     private val appContext = context.applicationContext
     private val trustManager by lazy { buildTrustManager() }
     private val sslSocketFactory by lazy { buildSslContext(trustManager).socketFactory }
+    // Per-call trace populated on the calling thread (synchronous execute): which DoH provider/addresses
+    // resolved the host and which peer the socket actually connected to (IPv4 vs IPv6).
+    private val callTrace = ThreadLocal<CallTrace?>()
     private val client by lazy { buildClient() }
 
     override fun send(request: HttpRequest): Int {
@@ -60,8 +72,15 @@ open class EventHttpClient(
         }
         requestBuilder.method(normalizedMethod, requestBody)
 
-        return client.newCall(requestBuilder.build()).execute().use { response ->
-            response.code
+        val trace = CallTrace()
+        callTrace.set(trace)
+        try {
+            return client.newCall(requestBuilder.build()).execute().use { response ->
+                logConnection(request, trace)
+                response.code
+            }
+        } finally {
+            callTrace.remove()
         }
     }
 
@@ -71,11 +90,35 @@ open class EventHttpClient(
                 DohProvider(endpoint.name, dohDnsFactory?.invoke(endpoint) ?: buildDohDns(endpoint))
             },
             onFailure = ::logDohFailure,
+            onResolved = { providerName, addresses ->
+                callTrace.get()?.let { it.provider = providerName; it.resolved = addresses }
+            },
+            randomize = randomizeDohOrder,
         )
         return OkHttpClient.Builder()
             .sslSocketFactory(sslSocketFactory, trustManager)
             .dns(dns)
+            .eventListener(ConnectionTraceListener(callTrace))
             .build()
+    }
+
+    private fun logConnection(request: HttpRequest, trace: CallTrace) {
+        val callback = onConnection ?: return
+        val host = runCatching { request.url.toHttpUrl().host }.getOrNull() ?: request.url
+        val peer = trace.peer?.address
+        val family = when (peer) {
+            is Inet6Address -> "IPv6"
+            is Inet4Address -> "IPv4"
+            else -> "unknown"
+        }
+        val endpoint = peer?.hostAddress?.let { "$it ($family)" } ?: "reused/unknown connection"
+        val via = trace.provider?.let { name ->
+            val resolved = trace.resolved?.joinToString(", ") { it.hostAddress ?: it.toString() }
+            " — resolved by $name" + (resolved?.let { " -> [$it]" } ?: "")
+        } ?: ""
+        val message = "Connection to $host used $endpoint$via"
+        Log.i(TAG, message)
+        runCatching { callback(message) }
     }
 
     private fun buildDohDns(endpoint: DohEndpoint): Dns {
@@ -167,14 +210,24 @@ open class EventHttpClient(
     private class ChainedDohDns(
         private val providers: List<DohProvider>,
         private val onFailure: (String) -> Unit,
+        private val onResolved: (String, List<InetAddress>) -> Unit,
+        private val randomize: Boolean,
     ) : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
-            literalIpAddress(hostname)?.let { return listOf(it) }
+            literalIpAddress(hostname)?.let {
+                onResolved("literal", listOf(it))
+                return listOf(it)
+            }
 
             var lastError: Exception? = null
-            providers.forEach { provider ->
+            // Randomize order per lookup so no single resolver is always primary — spreads load and lets
+            // us measure each provider's failure rate across positions from the logs.
+            val ordered = if (randomize) providers.shuffled() else providers
+            ordered.forEach { provider ->
                 try {
-                    return provider.dns.lookup(hostname)
+                    val addresses = provider.dns.lookup(hostname)
+                    onResolved(provider.name, addresses)
+                    return addresses
                 } catch (error: Exception) {
                     onFailure("DoH lookup failed via ${provider.name} for $hostname: ${describeThrowable(error)}")
                     lastError = error
@@ -191,6 +244,20 @@ open class EventHttpClient(
                 return null
             }
             return runCatching { InetAddress.getByName(hostname) }.getOrNull()
+        }
+    }
+
+    /** Mutable per-call trace: the resolving DoH provider + addresses, and the peer the socket connected to. */
+    private class CallTrace {
+        @Volatile var provider: String? = null
+        @Volatile var resolved: List<InetAddress>? = null
+        @Volatile var peer: InetSocketAddress? = null
+    }
+
+    /** Records the actually-connected peer (authoritative for IPv4 vs IPv6) into the current call's trace. */
+    private class ConnectionTraceListener(private val callTrace: ThreadLocal<CallTrace?>) : EventListener() {
+        override fun connectEnd(call: Call, inetSocketAddress: InetSocketAddress, proxy: Proxy, protocol: Protocol?) {
+            callTrace.get()?.peer = inetSocketAddress
         }
     }
 
@@ -214,17 +281,8 @@ open class EventHttpClient(
             "-----BEGIN CERTIFICATE-----\\s.*?-----END CERTIFICATE-----",
             setOf(RegexOption.DOT_MATCHES_ALL),
         )
+        // List order is not significant: ChainedDohDns randomizes the try-order per lookup (see `randomize`).
         private val DEFAULT_DOH_ENDPOINTS = listOf(
-            DohEndpoint(
-                name = "Cloudflare",
-                url = "https://cloudflare-dns.com/dns-query",
-                bootstrapAddresses = listOf(
-                    "1.1.1.1",
-                    "1.0.0.1",
-                    "2606:4700:4700::1111",
-                    "2606:4700:4700::1001",
-                ),
-            ),
             DohEndpoint(
                 name = "Google",
                 url = "https://dns.google/dns-query",
@@ -233,6 +291,16 @@ open class EventHttpClient(
                     "8.8.4.4",
                     "2001:4860:4860::8888",
                     "2001:4860:4860::8844",
+                ),
+            ),
+            DohEndpoint(
+                name = "Cloudflare",
+                url = "https://cloudflare-dns.com/dns-query",
+                bootstrapAddresses = listOf(
+                    "1.1.1.1",
+                    "1.0.0.1",
+                    "2606:4700:4700::1111",
+                    "2606:4700:4700::1001",
                 ),
             ),
             DohEndpoint(

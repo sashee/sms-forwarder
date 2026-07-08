@@ -8,6 +8,8 @@ import com.example.smsforwarder.data.ConfigRepository
 import com.example.smsforwarder.data.EventRepository
 import com.example.smsforwarder.net.EventHttpClient
 import com.example.smsforwarder.net.HttpSender
+import com.example.smsforwarder.util.AndroidWakeGuard
+import com.example.smsforwarder.util.WakeGuard
 import com.example.smsforwarder.work.EventScheduler
 import kotlinx.coroutines.runBlocking
 
@@ -32,12 +34,21 @@ open class AppContainer(context: Context) {
                     }
                 }
             },
+            onConnection = { message ->
+                runCatching {
+                    runBlocking {
+                        eventRepository.addLog(message)
+                    }
+                }
+            },
         )
     }
 
     open val eventRepository: EventRepository by lazy {
         EventRepository(appContext, database, configRepository)
     }
+
+    open val wakeGuard: WakeGuard by lazy { AndroidWakeGuard(appContext) }
 
     open val workManager: WorkManager by lazy {
         WorkManager.getInstance(appContext)
