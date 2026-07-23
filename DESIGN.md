@@ -58,7 +58,8 @@ Special values:
 - Because the target device is Android 9 (API 28), the app must explicitly opt in to cleartext traffic so configured `http` endpoints work.
 - For `https`, the app must use an app-bundled CA store derived from `nixpkgs` `cacert` and must not rely on the device system CA store.
 - Hostname resolution for outbound webhook and heartbeat requests must use DNS-over-HTTPS instead of the device resolver when the request URL host is a hostname rather than a literal IP.
-- The app ships a fixed DoH provider list in fallback order: Cloudflare, Google, then Quad9.
+- The app ships a fixed DoH provider list: Cloudflare, Google, then Quad9.
+- For each DNS resolution, the DoH provider list is randomized
 - Each DoH provider configuration includes both IPv4 and IPv6 bootstrap IP addresses so the app can reach the DoH endpoint without depending on system DNS.
 - If one DoH provider fails, the app logs that failure and tries the next configured provider before failing the outbound request.
 - Literal IPv4/IPv6 request hosts bypass DoH lookup and connect directly.
