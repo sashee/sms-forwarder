@@ -80,6 +80,7 @@ class EventRepositoryTest {
         assertEquals("+1999", event?.number)
         assertEquals("", event?.text)
         assertTrue(event!!.body.startsWith("+1999 1970-01-01T00:00:00Z"))
+        assertTrue(event.body.endsWith("\nhttps://kulfold.kihivott.hu/telefonszam/1999"))
     }
 
     @Test

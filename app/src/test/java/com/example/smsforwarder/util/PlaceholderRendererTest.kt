@@ -45,6 +45,51 @@ class PlaceholderRendererTest {
     }
 
     @Test
+    fun appendsHungarianLookupLinkForCall() {
+        val rendered = PlaceholderRenderer.render(
+            type = EventType.CALL,
+            template = "from={{call.number}}",
+            number = "+3616464734",
+            text = "",
+            timestampMillis = 0,
+        )
+
+        assertEquals(
+            "from=+3616464734\nhttps://www.kihivott.hu/telefonszam/0616464734",
+            rendered,
+        )
+    }
+
+    @Test
+    fun appendsForeignLookupLinkForCall() {
+        val rendered = PlaceholderRenderer.render(
+            type = EventType.CALL,
+            template = "from={{call.number}}",
+            number = "+48699741575",
+            text = "",
+            timestampMillis = 0,
+        )
+
+        assertEquals(
+            "from=+48699741575\nhttps://kulfold.kihivott.hu/telefonszam/48699741575",
+            rendered,
+        )
+    }
+
+    @Test
+    fun emptyCallBodyRendersLookupLinkOnly() {
+        val rendered = PlaceholderRenderer.render(
+            type = EventType.CALL,
+            template = "",
+            number = "+3616464734",
+            text = "",
+            timestampMillis = 0,
+        )
+
+        assertEquals("https://www.kihivott.hu/telefonszam/0616464734", rendered)
+    }
+
+    @Test
     fun leavesHeartbeatBodyUnchanged() {
         val rendered = PlaceholderRenderer.render(
             type = EventType.HEARTBEAT,
